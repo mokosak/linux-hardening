@@ -7,7 +7,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 if command -v pacman >/dev/null 2>&1; then
-  pacman -Sy --noconfirm firewalld apparmor apparmor-utils
+  pacman -Sy --noconfirm firewalld apparmor
 elif command -v apt-get >/dev/null 2>&1; then
   apt-get update
   apt-get install -y firewalld apparmor apparmor-utils
