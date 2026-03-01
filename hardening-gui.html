@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinuxHarden // System Security Configuration</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Bebas+Neue&display=swap');
+
+  :root {
+    --bg: #0a0c0f;
+    --panel: #0f1218;
+    --border: #1e2530;
+    --accent: #00ff88;
+    --accent2: #ff3366;
+    --accent3: #3388ff;
+    --text: #c8d4e0;
+    --muted: #4a5568;
+    --danger: #ff4444;
+    --warn: #ffaa00;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline effect */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,136,0.015) 2px, rgba(0,255,136,0.015) 4px);
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 20px 40px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    position: sticky;
+    top: 0;
+    background: rgba(10,12,15,0.95);
+    backdrop-filter: blur(10px);
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 4px;
+    color: var(--accent);
+    text-shadow: 0 0 20px rgba(0,255,136,0.4);
+  }
+
+  .logo span { color: var(--text); }
+
+  header .subtitle {
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    border-left: 1px solid var(--border);
+    padding-left: 20px;
+  }
+
+  .status-bar {
+    margin-left: auto;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  main {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 0;
+    min-height: calc(100vh - 65px);
+  }
+
+  .config-panel {
+    padding: 32px 40px;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+
+  .section {
+    margin-bottom: 32px;
+    animation: fadeIn 0.4s ease both;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .section:nth-child(1) { animation-delay: 0.05s; }
+  .section:nth-child(2) { animation-delay: 0.10s; }
+  .section:nth-child(3) { animation-delay: 0.15s; }
+  .section:nth-child(4) { animation-delay: 0.20s; }
+  .section:nth-child(5) { animation-delay: 0.25s; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-icon {
+    font-size: 16px;
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,255,136,0.08);
+    border: 1px solid rgba(0,255,136,0.2);
+    border-radius: 4px;
+  }
+
+  .section-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 3px;
+    color: var(--text);
+  }
+
+  .section-badge {
+    margin-left: auto;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 2px;
+    letter-spacing: 1px;
+  }
+
+  .badge-critical { background: rgba(255,68,68,0.15); color: var(--danger); border: 1px solid rgba(255,68,68,0.3); }
+  .badge-high { background: rgba(255,170,0,0.15); color: var(--warn); border: 1px solid rgba(255,170,0,0.3); }
+  .badge-medium { background: rgba(51,136,255,0.15); color: var(--accent3); border: 1px solid rgba(51,136,255,0.3); }
+
+  .toggle-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 12px 14px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+  }
+
+  .toggle-row:hover {
+    background: rgba(255,255,255,0.03);
+    border-color: var(--border);
+  }
+
+  .toggle-row.active {
+    background: rgba(0,255,136,0.04);
+    border-color: rgba(0,255,136,0.15);
+  }
+
+  .toggle-row.active .option-name { color: var(--accent); }
+
+  .toggle {
+    position: relative;
+    width: 36px; height: 20px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .toggle input { display: none; }
+
+  .toggle-track {
+    position: absolute;
+    inset: 0;
+    background: var(--border);
+    border-radius: 10px;
+    transition: background 0.2s ease;
+    cursor: pointer;
+  }
+
+  .toggle-track::after {
+    content: '';
+    position: absolute;
+    left: 3px; top: 3px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: all 0.2s ease;
+  }
+
+  .toggle input:checked + .toggle-track {
+    background: rgba(0,255,136,0.3);
+    border: 1px solid rgba(0,255,136,0.5);
+  }
+
+  .toggle input:checked + .toggle-track::after {
+    transform: translateX(16px);
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(0,255,136,0.6);
+  }
+
+  .option-info { flex: 1; }
+
+  .option-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 3px;
+    transition: color 0.15s;
+  }
+
+  .option-desc {
+    font-size: 10px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  .option-tag {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    background: rgba(51,136,255,0.1);
+    color: var(--accent3);
+    border: 1px solid rgba(51,136,255,0.2);
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  /* Output panel */
+  .output-panel {
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    top: 65px;
+    height: calc(100vh - 65px);
+  }
+
+  .output-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .output-title {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    text-transform: uppercase;
+    flex: 1;
+  }
+
+  .btn {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s ease;
+    text-transform: uppercase;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+    font-weight: 700;
+  }
+
+  .btn-primary:hover {
+    background: #00ffaa;
+    box-shadow: 0 0 16px rgba(0,255,136,0.4);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+
+  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+
+  .output-code {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    font-size: 10.5px;
+    line-height: 1.7;
+    color: #8fa0b0;
+    white-space: pre;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .output-code .c-comment { color: #3a4a5a; }
+  .output-code .c-keyword { color: #ff6b9d; }
+  .output-code .c-cmd { color: #61dafb; }
+  .output-code .c-str { color: #98d982; }
+  .output-code .c-var { color: #ffd700; }
+  .output-code .c-section { color: var(--accent); font-weight: bold; }
+
+  .stats-bar {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 20px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .stat { display: flex; flex-direction: column; gap: 2px; }
+  .stat-val { color: var(--text); font-size: 14px; font-weight: 500; }
+  .stat-lbl { letter-spacing: 1px; text-transform: uppercase; font-size: 9px; }
+
+  .score-ring {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .score-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    color: var(--accent);
+    text-shadow: 0 0 10px rgba(0,255,136,0.3);
+    line-height: 1;
+  }
+
+  .score-label { font-size: 9px; color: var(--muted); letter-spacing: 1px; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: var(--panel);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 10px 18px;
+    border-radius: 4px;
+    font-size: 11px;
+    letter-spacing: 1px;
+    box-shadow: 0 0 20px rgba(0,255,136,0.2);
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all 0.3s ease;
+    z-index: 999;
+  }
+
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Linux<span>Harden</span></div>
+  <div class="subtitle">System Security Generator // v2.0</div>
+  <div class="status-bar">
+    <div class="status-dot"></div>
+    <span>READY</span>
+  </div>
+</header>
+
+<main>
+  <div class="config-panel" id="configPanel">
+
+    <!-- Section: Package Installation -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">📦</div>
+        <div class="section-title">Package Installation</div>
+        <span class="section-badge badge-critical">CRITICAL</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="pkg_firewalld" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Install firewalld</div>
+          <div class="option-desc">Dynamic firewall daemon with D-Bus interface. Manages nftables/iptables rules at runtime.</div>
+        </div>
+        <span class="option-tag">FIREWALL</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="pkg_apparmor" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Install AppArmor</div>
+          <div class="option-desc">Mandatory access control system. Confines programs to a limited set of resources via per-program profiles.</div>
+        </div>
+        <span class="option-tag">MAC</span>
+      </div>
+    </div>
+
+    <!-- Section: Kernel Hardening -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">⚙️</div>
+        <div class="section-title">Kernel Parameters</div>
+        <span class="section-badge badge-critical">CRITICAL</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="k_kptr" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Restrict kernel pointer exposure</div>
+          <div class="option-desc">kptr_restrict=2 — hides kernel pointers from all users, mitigating KASLR bypass attacks.</div>
+        </div>
+        <span class="option-tag">KASLR</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="k_dmesg" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Restrict dmesg access</div>
+          <div class="option-desc">dmesg_restrict=1 — prevents unprivileged users from reading kernel ring buffer (info leak mitigation).</div>
+        </div>
+        <span class="option-tag">INFO LEAK</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="k_aslr" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Full ASLR randomization</div>
+          <div class="option-desc">randomize_va_space=2 — enables full address space layout randomization including heap/stack/mmap.</div>
+        </div>
+        <span class="option-tag">ASLR</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="k_bpf" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Disable unprivileged BPF</div>
+          <div class="option-desc">Prevents unprivileged users from loading eBPF programs, which are a common attack vector for kernel exploits.</div>
+        </div>
+        <span class="option-tag">BPF</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="k_ptrace" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Restrict ptrace scope (Yama)</div>
+          <div class="option-desc">yama.ptrace_scope=1 — allows ptrace only on child processes, blocking process injection between unrelated processes.</div>
+        </div>
+        <span class="option-tag">PTRACE</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="k_sysrq" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Disable SysRq key</div>
+          <div class="option-desc">sysrq=0 — disables the magic SysRq key entirely, preventing physical-access attacks via keyboard shortcuts.</div>
+        </div>
+        <span class="option-tag">PHYSICAL</span>
+      </div>
+    </div>
+
+    <!-- Section: Filesystem -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">🗂️</div>
+        <div class="section-title">Filesystem Protections</div>
+        <span class="section-badge badge-high">HIGH</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="fs_links" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Protect hardlinks &amp; symlinks</div>
+          <div class="option-desc">Prevents users from following symlinks or hardlinks they don't own, blocking TOCTOU attack patterns.</div>
+        </div>
+        <span class="option-tag">TOCTOU</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="fs_fifos" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Protect FIFOs &amp; regular files</div>
+          <div class="option-desc">protected_fifos=2 / protected_regular=2 — blocks privilege escalation via world-writable sticky directories.</div>
+        </div>
+        <span class="option-tag">PRIVESC</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="fs_coredump" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Disable SUID core dumps</div>
+          <div class="option-desc">suid_dumpable=0 — prevents setuid processes from writing core dumps which could expose sensitive data.</div>
+        </div>
+        <span class="option-tag">COREDUMP</span>
+      </div>
+    </div>
+
+    <!-- Section: Network -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">🌐</div>
+        <div class="section-title">Network Hardening</div>
+        <span class="section-badge badge-high">HIGH</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="net_redirects" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Disable ICMP redirects</div>
+          <div class="option-desc">Prevents routing table manipulation via spoofed ICMP redirect messages — common MitM vector on LANs.</div>
+        </div>
+        <span class="option-tag">MITM</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="net_source_route" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Disable source routing</div>
+          <div class="option-desc">Drops packets with IP source routing options, preventing route spoofing and traffic redirection attacks.</div>
+        </div>
+        <span class="option-tag">SPOOFING</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="net_syncookies" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">TCP SYN cookies</div>
+          <div class="option-desc">Enables SYN flood protection without dropping legitimate connections. Essential for internet-facing services.</div>
+        </div>
+        <span class="option-tag">SYN FLOOD</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="net_rp_filter" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Reverse path filtering</div>
+          <div class="option-desc">rp_filter=2 — validates source address of incoming packets, mitigating IP spoofing and DDoS amplification.</div>
+        </div>
+        <span class="option-tag">IP SPOOF</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="net_icmp_bcast" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Ignore broadcast ICMP &amp; bogus errors</div>
+          <div class="option-desc">Prevents Smurf amplification attacks and suppresses bogus ICMP error responses that can cause issues.</div>
+        </div>
+        <span class="option-tag">SMURF</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="net_ipv6" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Disable IPv6 redirects</div>
+          <div class="option-desc">Applies the same ICMP redirect protections to IPv6 interfaces, preventing IPv6-based routing attacks.</div>
+        </div>
+        <span class="option-tag">IPv6</span>
+      </div>
+    </div>
+
+    <!-- Section: Firewall Rules -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">🔥</div>
+        <div class="section-title">Firewall Rules</div>
+        <span class="section-badge badge-high">HIGH</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="fw_ssh" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Allow SSH (port 22)</div>
+          <div class="option-desc">Permits inbound SSH connections. Disable if you have an alternative remote access method or different port.</div>
+        </div>
+        <span class="option-tag">SSH</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="fw_https" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Allow HTTPS (port 443)</div>
+          <div class="option-desc">Permits inbound HTTPS traffic. Required for web servers. Disable for pure backend or desktop systems.</div>
+        </div>
+        <span class="option-tag">HTTPS</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="fw_dot" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Allow DNS-over-TLS (port 853)</div>
+          <div class="option-desc">Required when using systemd-resolved with DoT enabled. Permits outbound encrypted DNS queries.</div>
+        </div>
+        <span class="option-tag">DNS</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="fw_dccp_sctp" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Drop DCCP &amp; SCTP protocols</div>
+          <div class="option-desc">Drops obscure transport protocols rarely used legitimately but commonly abused by scanners and exploits.</div>
+        </div>
+        <span class="option-tag">RECON</span>
+      </div>
+    </div>
+
+    <!-- Section: DNS over TLS -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">🔐</div>
+        <div class="section-title">Encrypted DNS</div>
+        <span class="section-badge badge-medium">MEDIUM</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="dns_enable" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Configure systemd-resolved with DoT</div>
+          <div class="option-desc">Routes all DNS through Cloudflare (1.1.1.1) with TLS encryption. Fallback to Quad9 (9.9.9.9).</div>
+        </div>
+        <span class="option-tag">DoT</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="dns_dnssec" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Enable DNSSEC validation</div>
+          <div class="option-desc">Cryptographically verifies DNS responses, protecting against cache poisoning and DNS spoofing attacks.</div>
+        </div>
+        <span class="option-tag">DNSSEC</span>
+      </div>
+    </div>
+
+    <!-- Section: AppArmor -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-icon">🛡️</div>
+        <div class="section-title">AppArmor Profiles</div>
+        <span class="section-badge badge-medium">MEDIUM</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="aa_avahi" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Enforce avahi-daemon profile</div>
+          <div class="option-desc">Confines the mDNS/DNS-SD service. Recommended if Avahi is present; reduces local network attack surface.</div>
+        </div>
+        <span class="option-tag">AVAHI</span>
+      </div>
+      <div class="toggle-row active" onclick="toggle(this)">
+        <label class="toggle"><input type="checkbox" id="aa_dnsmasq" checked onchange="render()"><div class="toggle-track"></div></label>
+        <div class="option-info">
+          <div class="option-name">Enforce dnsmasq profile</div>
+          <div class="option-desc">Confines the dnsmasq DNS/DHCP server. Apply when dnsmasq is used as a local resolver or DHCP service.</div>
+        </div>
+        <span class="option-tag">DNSMASQ</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Output Panel -->
+  <div class="output-panel">
+    <div class="output-header">
+      <span class="output-title">Generated Script</span>
+      <button class="btn btn-ghost" onclick="copyScript()">Copy</button>
+      <button class="btn btn-primary" onclick="downloadScript()">Download</button>
+    </div>
+    <div class="output-code" id="outputCode"></div>
+    <div class="stats-bar">
+      <div class="stat">
+        <span class="stat-val" id="lineCount">0</span>
+        <span class="stat-lbl">Lines</span>
+      </div>
+      <div class="stat">
+        <span class="stat-val" id="featureCount">0</span>
+        <span class="stat-lbl">Features</span>
+      </div>
+      <div class="score-ring">
+        <div>
+          <div class="score-num" id="scoreNum">100</div>
+          <div class="score-label">Security Score</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function toggle(row) {
+  const cb = row.querySelector('input[type=checkbox]');
+  cb.checked = !cb.checked;
+  row.classList.toggle('active', cb.checked);
+  render();
+}
+
+function get(id) {
+  return document.getElementById(id)?.checked ?? false;
+}
+
+function generateScript() {
+  const lines = [];
+
+  lines.push(`#!/usr/bin/env bash`);
+  lines.push(`set -euo pipefail`);
+  lines.push(``);
+  lines.push(`# ============================================================`);
+  lines.push(`# LinuxHarden // Auto-generated security hardening script`);
+  lines.push(`# Generated: ${new Date().toISOString()}`);
+  lines.push(`# ============================================================`);
+  lines.push(``);
+  lines.push(`if [ "$EUID" -ne 0 ]; then`);
+  lines.push(`  sudo -v || exit 1`);
+  lines.push(`  exec sudo "$0" "$@"`);
+  lines.push(`fi`);
+  lines.push(``);
+
+  const needsPkg = get('pkg_firewalld') || get('pkg_apparmor');
+  if (needsPkg) {
+    lines.push(`# ── Package Installation ────────────────────────────────────`);
+    const pkgs_pacman = [];
+    const pkgs_apt = [];
+    if (get('pkg_firewalld')) { pkgs_pacman.push('firewalld'); pkgs_apt.push('firewalld'); }
+    if (get('pkg_apparmor')) { pkgs_pacman.push('apparmor'); pkgs_apt.push('apparmor apparmor-utils'); }
+
+    lines.push(`if command -v pacman >/dev/null 2>&1; then`);
+    lines.push(`  pacman -Sy --noconfirm ${pkgs_pacman.join(' ')}`);
+    lines.push(`elif command -v apt-get >/dev/null 2>&1; then`);
+    lines.push(`  apt-get update`);
+    lines.push(`  apt-get install -y ${pkgs_apt.join(' ')}`);
+    lines.push(`else`);
+    lines.push(`  echo "Unsupported package manager" && exit 1`);
+    lines.push(`fi`);
+    lines.push(``);
+
+    if (get('pkg_apparmor')) {
+      lines.push(`systemctl enable --now apparmor`);
+    }
+    if (get('pkg_firewalld')) {
+      lines.push(`systemctl enable --now firewalld`);
+    }
+    lines.push(``);
+  }
+
+  const kernelParams = [];
+  if (get('k_kptr')) {
+    kernelParams.push(`kernel.kptr_restrict=2`);
+  }
+  if (get('k_dmesg')) {
+    kernelParams.push(`kernel.dmesg_restrict=1`);
+  }
+  if (get('k_aslr')) {
+    kernelParams.push(`kernel.randomize_va_space=2`);
+  }
+  if (get('k_bpf')) {
+    kernelParams.push(`kernel.unprivileged_bpf_disabled=1`);
+  }
+  if (get('k_ptrace')) {
+    kernelParams.push(`kernel.yama.ptrace_scope=1`);
+  }
+  if (get('k_sysrq')) {
+    kernelParams.push(`kernel.sysrq=0`);
+  }
+
+  const fsParams = [];
+  if (get('fs_links')) {
+    fsParams.push(`fs.protected_hardlinks=1`);
+    fsParams.push(`fs.protected_symlinks=1`);
+  }
+  if (get('fs_fifos')) {
+    fsParams.push(`fs.protected_fifos=2`);
+    fsParams.push(`fs.protected_regular=2`);
+  }
+  if (get('fs_coredump')) {
+    fsParams.push(`fs.suid_dumpable=0`);
+  }
+
+  const netParams = [];
+  if (get('net_redirects')) {
+    netParams.push(`net.ipv4.conf.all.accept_redirects=0`);
+    netParams.push(`net.ipv4.conf.default.accept_redirects=0`);
+    netParams.push(`net.ipv4.conf.all.send_redirects=0`);
+    netParams.push(`net.ipv4.conf.default.send_redirects=0`);
+  }
+  if (get('net_source_route')) {
+    netParams.push(`net.ipv4.conf.all.accept_source_route=0`);
+    netParams.push(`net.ipv4.conf.default.accept_source_route=0`);
+  }
+  if (get('net_icmp_bcast')) {
+    netParams.push(`net.ipv4.icmp_echo_ignore_broadcasts=1`);
+    netParams.push(`net.ipv4.icmp_ignore_bogus_error_responses=1`);
+  }
+  if (get('net_syncookies')) {
+    netParams.push(`net.ipv4.tcp_syncookies=1`);
+  }
+  if (get('net_rp_filter')) {
+    netParams.push(`net.ipv4.conf.all.rp_filter=2`);
+    netParams.push(`net.ipv4.conf.default.rp_filter=2`);
+  }
+  if (get('net_ipv6')) {
+    netParams.push(`net.ipv6.conf.all.accept_redirects=0`);
+    netParams.push(`net.ipv6.conf.default.accept_redirects=0`);
+  }
+
+  if (kernelParams.length || fsParams.length || netParams.length) {
+    lines.push(`# ── Kernel / sysctl Parameters ──────────────────────────────`);
+    lines.push(`cat > /etc/sysctl.d/99-hardening.conf << 'EOF'`);
+    if (kernelParams.length) {
+      lines.push(`# Kernel`);
+      kernelParams.forEach(p => lines.push(p));
+    }
+    if (fsParams.length) {
+      lines.push(``);
+      lines.push(`# Filesystem`);
+      fsParams.forEach(p => lines.push(p));
+    }
+    if (netParams.length) {
+      lines.push(``);
+      lines.push(`# Network`);
+      netParams.forEach(p => lines.push(p));
+    }
+    lines.push(`EOF`);
+    lines.push(``);
+    lines.push(`sysctl --system`);
+    lines.push(``);
+  }
+
+  const hasFwRules = get('fw_ssh') || get('fw_https') || get('fw_dot') || get('fw_dccp_sctp');
+  if (get('pkg_firewalld') && hasFwRules) {
+    lines.push(`# ── Firewall Rules ──────────────────────────────────────────`);
+    lines.push(`firewall-cmd --set-default-zone=public`);
+    if (get('fw_ssh'))  lines.push(`firewall-cmd --permanent --zone=public --add-service=ssh`);
+    if (get('fw_https')) lines.push(`firewall-cmd --permanent --zone=public --add-service=https`);
+    if (get('fw_dot'))  lines.push(`firewall-cmd --permanent --zone=public --add-port=853/tcp`);
+    if (get('fw_dccp_sctp')) {
+      lines.push(`firewall-cmd --permanent --zone=public --add-rich-rule='rule protocol value="dccp" drop'`);
+      lines.push(`firewall-cmd --permanent --zone=public --add-rich-rule='rule protocol value="sctp" drop'`);
+    }
+    lines.push(`firewall-cmd --reload`);
+    lines.push(``);
+  }
+
+  if (get('dns_enable') || get('dns_dnssec')) {
+    lines.push(`# ── Encrypted DNS ───────────────────────────────────────────`);
+    lines.push(`systemctl enable --now systemd-resolved`);
+    lines.push(`ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf`);
+    lines.push(``);
+    if (get('dns_enable')) {
+      lines.push(`sed -i 's/^#\\?DNS=.*/DNS=1.1.1.1/' /etc/systemd/resolved.conf || true`);
+      lines.push(`sed -i 's/^#\\?FallbackDNS=.*/FallbackDNS=9.9.9.9/' /etc/systemd/resolved.conf || true`);
+      lines.push(`sed -i 's/^#\\?DNSOverTLS=.*/DNSOverTLS=yes/' /etc/systemd/resolved.conf || true`);
+    }
+    if (get('dns_dnssec')) {
+      lines.push(`sed -i 's/^#\\?DNSSEC=.*/DNSSEC=yes/' /etc/systemd/resolved.conf || true`);
+    }
+    lines.push(``);
+    lines.push(`systemctl restart systemd-resolved`);
+    lines.push(`resolvectl flush-caches`);
+    lines.push(``);
+  }
+
+  if ((get('aa_avahi') || get('aa_dnsmasq')) && get('pkg_apparmor')) {
+    lines.push(`# ── AppArmor Profile Enforcement ────────────────────────────`);
+    if (get('aa_avahi')) {
+      lines.push(`[ -f /etc/apparmor.d/usr.sbin.avahi-daemon ] && aa-enforce /etc/apparmor.d/usr.sbin.avahi-daemon`);
+    }
+    if (get('aa_dnsmasq')) {
+      lines.push(`[ -f /etc/apparmor.d/usr.sbin.dnsmasq ] && aa-enforce /etc/apparmor.d/usr.sbin.dnsmasq`);
+    }
+    lines.push(``);
+  }
+
+  lines.push(`echo ""`);
+  lines.push(`echo "✓ Hardening complete. A reboot is recommended."`);
+
+  return lines.join('\n');
+}
+
+function syntaxHighlight(code) {
+  return code
+    .replace(/^(#.*)/gm, '<span class="c-comment">$1</span>')
+    .replace(/\b(if|then|else|elif|fi|for|do|done|while|case|esac|in)\b/g, '<span class="c-keyword">$1</span>')
+    .replace(/\b(systemctl|sed|cat|echo|ln|sysctl|firewall-cmd|pacman|apt-get|aa-enforce|resolvectl|command)\b/g, '<span class="c-cmd">$1</span>')
+    .replace(/'([^']+)'/g, '<span class="c-str">\'$1\'</span>')
+    .replace(/\$\{?[\w@#?*!0-9]+\}?/g, '<span class="c-var">$&</span>')
+    .replace(/^(# ──.*)/gm, '<span class="c-section">$1</span>');
+}
+
+function countFeatures() {
+  const ids = ['pkg_firewalld','pkg_apparmor','k_kptr','k_dmesg','k_aslr','k_bpf','k_ptrace','k_sysrq',
+    'fs_links','fs_fifos','fs_coredump','net_redirects','net_source_route','net_syncookies',
+    'net_rp_filter','net_icmp_bcast','net_ipv6','fw_ssh','fw_https','fw_dot','fw_dccp_sctp',
+    'dns_enable','dns_dnssec','aa_avahi','aa_dnsmasq'];
+  const total = ids.length;
+  const enabled = ids.filter(id => get(id)).length;
+  return { enabled, total };
+}
+
+function render() {
+  const script = generateScript();
+  const el = document.getElementById('outputCode');
+  el.innerHTML = syntaxHighlight(script);
+
+  const lines = script.split('\n').length;
+  document.getElementById('lineCount').textContent = lines;
+
+  const { enabled, total } = countFeatures();
+  document.getElementById('featureCount').textContent = enabled + '/' + total;
+
+  const score = Math.round((enabled / total) * 100);
+  const scoreEl = document.getElementById('scoreNum');
+  scoreEl.textContent = score;
+  scoreEl.style.color = score >= 80 ? 'var(--accent)' : score >= 50 ? 'var(--warn)' : 'var(--danger)';
+}
+
+function copyScript() {
+  const script = generateScript();
+  navigator.clipboard.writeText(script).then(() => showToast('✓ Copied to clipboard'));
+}
+
+function downloadScript() {
+  const script = generateScript();
+  const blob = new Blob([script], { type: 'text/x-sh' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'harden.sh';
+  a.click();
+  showToast('✓ harden.sh downloaded');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// Sync toggle row state on checkbox click (when clicking the toggle directly)
+document.querySelectorAll('.toggle input').forEach(cb => {
+  cb.addEventListener('click', e => {
+    e.stopPropagation();
+    const row = cb.closest('.toggle-row');
+    row.classList.toggle('active', cb.checked);
+    render();
+  });
+});
+
+render();
+</script>
+</body>
+</html>
