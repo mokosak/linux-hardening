@@ -3,953 +3,1188 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LinuxHarden // System Security Configuration</title>
+<title>linux-hardening // security generator v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Grotesk:wght@400;500;700&family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Bebas+Neue&display=swap');
-
   :root {
-    --bg: #0a0c0f;
-    --panel: #0f1218;
-    --border: #1e2530;
-    --accent: #00ff88;
-    --accent2: #ff3366;
-    --accent3: #3388ff;
-    --text: #c8d4e0;
-    --muted: #4a5568;
-    --danger: #ff4444;
-    --warn: #ffaa00;
+    /* theme: cyber (default) */
+    --bg:      #070a0d;
+    --bg-2:    #0b0f15;
+    --panel:   #0e1420;
+    --panel-2: #121a27;
+    --border:  #1c2636;
+    --border-soft: #151d2b;
+    --text:    #d6e1ec;
+    --muted:   #5b6b82;
+    --dim:     #3a4558;
+    --accent:  #00ffa3;
+    --accent-2:#ff3c7a;
+    --accent-3:#46a8ff;
+    --warn:    #ffb648;
+    --danger:  #ff4d5a;
+    --glow: 0 0 24px rgba(0,255,163,.18);
+    --radius: 8px;
+  }
+  [data-theme="synthwave"] {
+    --bg:#0f0420; --bg-2:#160932; --panel:#1a0a3a; --panel-2:#241047;
+    --border:#3b1c6e; --border-soft:#2a1350; --text:#f2e2ff; --muted:#8b7aad; --dim:#5a4a80;
+    --accent:#ff6ad5; --accent-2:#fffb96; --accent-3:#8f64f6; --warn:#ffc46b; --danger:#ff4d6d;
+    --glow: 0 0 24px rgba(255,106,213,.25);
+  }
+  [data-theme="matrix"] {
+    --bg:#030604; --bg-2:#04120a; --panel:#061a10; --panel-2:#082517;
+    --border:#0e3a22; --border-soft:#0a2b19; --text:#c9ffd9; --muted:#4b7e5d; --dim:#2b4e36;
+    --accent:#00ff66; --accent-2:#aaff00; --accent-3:#66ffaa; --warn:#ffcc00; --danger:#ff3344;
+    --glow: 0 0 24px rgba(0,255,102,.22);
+  }
+  [data-theme="nord"] {
+    --bg:#1a1f2b; --bg-2:#222836; --panel:#2a313f; --panel-2:#333b4b;
+    --border:#3b4354; --border-soft:#2f3646; --text:#eceff4; --muted:#7b87a0; --dim:#4c566a;
+    --accent:#88c0d0; --accent-2:#d08770; --accent-3:#81a1c1; --warn:#ebcb8b; --danger:#bf616a;
+    --glow: 0 0 18px rgba(136,192,208,.18);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
-
+  html, body { height: 100%; }
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
     min-height: 100vh;
     overflow-x: hidden;
-  }
-
-  /* Scanline effect */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,136,0.015) 2px, rgba(0,255,136,0.015) 4px);
-    pointer-events: none;
-    z-index: 1000;
-  }
-
-  header {
-    border-bottom: 1px solid var(--border);
-    padding: 20px 40px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    position: sticky;
-    top: 0;
-    background: rgba(10,12,15,0.95);
-    backdrop-filter: blur(10px);
-    z-index: 100;
-  }
-
-  .logo {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 28px;
-    letter-spacing: 4px;
-    color: var(--accent);
-    text-shadow: 0 0 20px rgba(0,255,136,0.4);
-  }
-
-  .logo span { color: var(--text); }
-
-  header .subtitle {
-    font-size: 10px;
-    color: var(--muted);
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    border-left: 1px solid var(--border);
-    padding-left: 20px;
-  }
-
-  .status-bar {
-    margin-left: auto;
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    font-size: 11px;
-    color: var(--muted);
-  }
-
-  .status-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 6px var(--accent);
-    animation: pulse 2s infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
-  main {
-    display: grid;
-    grid-template-columns: 1fr 420px;
-    gap: 0;
-    min-height: calc(100vh - 65px);
-  }
-
-  .config-panel {
-    padding: 32px 40px;
-    border-right: 1px solid var(--border);
-    overflow-y: auto;
-  }
-
-  .section {
-    margin-bottom: 32px;
-    animation: fadeIn 0.4s ease both;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
-  .section:nth-child(1) { animation-delay: 0.05s; }
-  .section:nth-child(2) { animation-delay: 0.10s; }
-  .section:nth-child(3) { animation-delay: 0.15s; }
-  .section:nth-child(4) { animation-delay: 0.20s; }
-  .section:nth-child(5) { animation-delay: 0.25s; }
-
-  .section-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .section-icon {
-    font-size: 16px;
-    width: 32px; height: 32px;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(0,255,136,0.08);
-    border: 1px solid rgba(0,255,136,0.2);
-    border-radius: 4px;
-  }
-
-  .section-title {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 18px;
-    letter-spacing: 3px;
-    color: var(--text);
-  }
-
-  .section-badge {
-    margin-left: auto;
-    font-size: 10px;
-    padding: 2px 8px;
-    border-radius: 2px;
-    letter-spacing: 1px;
-  }
-
-  .badge-critical { background: rgba(255,68,68,0.15); color: var(--danger); border: 1px solid rgba(255,68,68,0.3); }
-  .badge-high { background: rgba(255,170,0,0.15); color: var(--warn); border: 1px solid rgba(255,170,0,0.3); }
-  .badge-medium { background: rgba(51,136,255,0.15); color: var(--accent3); border: 1px solid rgba(51,136,255,0.3); }
-
-  .toggle-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-    padding: 12px 14px;
-    border-radius: 6px;
-    border: 1px solid transparent;
-    margin-bottom: 6px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    position: relative;
-  }
-
-  .toggle-row:hover {
-    background: rgba(255,255,255,0.03);
-    border-color: var(--border);
-  }
-
-  .toggle-row.active {
-    background: rgba(0,255,136,0.04);
-    border-color: rgba(0,255,136,0.15);
-  }
-
-  .toggle-row.active .option-name { color: var(--accent); }
-
-  .toggle {
-    position: relative;
-    width: 36px; height: 20px;
-    flex-shrink: 0;
-    margin-top: 2px;
-  }
-
-  .toggle input { display: none; }
-
-  .toggle-track {
-    position: absolute;
-    inset: 0;
-    background: var(--border);
-    border-radius: 10px;
-    transition: background 0.2s ease;
-    cursor: pointer;
-  }
-
-  .toggle-track::after {
-    content: '';
-    position: absolute;
-    left: 3px; top: 3px;
-    width: 14px; height: 14px;
-    border-radius: 50%;
-    background: var(--muted);
-    transition: all 0.2s ease;
-  }
-
-  .toggle input:checked + .toggle-track {
-    background: rgba(0,255,136,0.3);
-    border: 1px solid rgba(0,255,136,0.5);
-  }
-
-  .toggle input:checked + .toggle-track::after {
-    transform: translateX(16px);
-    background: var(--accent);
-    box-shadow: 0 0 8px rgba(0,255,136,0.6);
-  }
-
-  .option-info { flex: 1; }
-
-  .option-name {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text);
-    margin-bottom: 3px;
-    transition: color 0.15s;
-  }
-
-  .option-desc {
-    font-size: 10px;
-    color: var(--muted);
     line-height: 1.5;
   }
 
-  .option-tag {
-    font-size: 9px;
-    padding: 1px 5px;
-    border-radius: 2px;
-    background: rgba(51,136,255,0.1);
-    color: var(--accent3);
-    border: 1px solid rgba(51,136,255,0.2);
-    flex-shrink: 0;
-    margin-top: 3px;
+  /* animated gradient mesh backdrop */
+  body::before {
+    content: '';
+    position: fixed; inset: -20%;
+    background:
+      radial-gradient(ellipse 60% 40% at 20% 30%, color-mix(in oklab, var(--accent) 14%, transparent), transparent 60%),
+      radial-gradient(ellipse 50% 50% at 80% 70%, color-mix(in oklab, var(--accent-3) 12%, transparent), transparent 60%),
+      radial-gradient(ellipse 50% 40% at 60% 10%, color-mix(in oklab, var(--accent-2) 10%, transparent), transparent 60%);
+    filter: blur(60px) saturate(1.1);
+    pointer-events: none; z-index: 0;
+    animation: drift 28s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    0%   { transform: translate(0,0) scale(1); }
+    100% { transform: translate(3%, -2%) scale(1.05); }
+  }
+  /* subtle scanlines */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(255,255,255,.012) 3px, rgba(255,255,255,.012) 4px);
+    mix-blend-mode: overlay;
+    pointer-events: none; z-index: 1;
   }
 
-  /* Output panel */
-  .output-panel {
-    background: var(--panel);
-    display: flex;
-    flex-direction: column;
-    position: sticky;
-    top: 65px;
-    height: calc(100vh - 65px);
-  }
-
-  .output-header {
-    padding: 16px 20px;
+  header {
+    position: sticky; top: 0; z-index: 30;
+    backdrop-filter: blur(14px);
+    background: color-mix(in oklab, var(--bg) 82%, transparent);
     border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    display: flex; align-items: center; gap: 20px;
+    padding: 14px 28px;
+  }
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 30px; letter-spacing: 4px;
+    color: var(--accent);
+    text-shadow: 0 0 18px color-mix(in oklab, var(--accent) 40%, transparent);
+    position: relative;
+  }
+  .logo::before {
+    content: '';
+    position: absolute; left: -14px; top: 50%;
+    width: 8px; height: 8px; transform: translateY(-50%);
+    background: var(--accent); border-radius: 50%;
+    box-shadow: 0 0 12px var(--accent);
+    animation: blink 1.6s infinite;
+  }
+  @keyframes blink { 50% { opacity: .25; } }
+  .logo span { color: var(--text); }
+  .sub {
+    font-size: 10px; letter-spacing: 3px; text-transform: uppercase;
+    color: var(--muted); padding-left: 16px; border-left: 1px solid var(--border);
+  }
+  .spacer { flex: 1; }
+  .theme-switch {
+    display: flex; gap: 4px; padding: 3px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 999px;
+  }
+  .theme-switch button {
+    width: 22px; height: 22px; border-radius: 50%; border: none;
+    cursor: pointer; transition: transform .15s; position: relative;
+  }
+  .theme-switch button:hover { transform: scale(1.12); }
+  .theme-switch button.active { outline: 2px solid var(--text); outline-offset: 2px; }
+  .sw-cyber     { background: linear-gradient(135deg, #00ffa3, #46a8ff); }
+  .sw-synthwave { background: linear-gradient(135deg, #ff6ad5, #8f64f6); }
+  .sw-matrix    { background: linear-gradient(135deg, #00ff66, #0a2b19); }
+  .sw-nord      { background: linear-gradient(135deg, #88c0d0, #4c566a); }
+
+  main {
+    position: relative; z-index: 2;
+    display: grid;
+    grid-template-columns: 1fr minmax(380px, 460px);
+    gap: 0;
+    min-height: calc(100vh - 62px);
   }
 
-  .output-title {
-    font-size: 11px;
-    letter-spacing: 2px;
-    color: var(--muted);
-    text-transform: uppercase;
-    flex: 1;
-  }
-
-  .btn {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    letter-spacing: 1px;
-    padding: 6px 14px;
-    border-radius: 3px;
-    cursor: pointer;
-    border: none;
-    transition: all 0.15s ease;
-    text-transform: uppercase;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: #000;
-    font-weight: 700;
-  }
-
-  .btn-primary:hover {
-    background: #00ffaa;
-    box-shadow: 0 0 16px rgba(0,255,136,0.4);
-  }
-
-  .btn-ghost {
-    background: transparent;
-    color: var(--muted);
-    border: 1px solid var(--border);
-  }
-
-  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
-
-  .output-code {
-    flex: 1;
+  /* ─────────── left: config panel ─────────── */
+  .config {
+    padding: 24px 28px 60px;
+    border-right: 1px solid var(--border);
     overflow-y: auto;
-    padding: 20px;
-    font-size: 10.5px;
-    line-height: 1.7;
-    color: #8fa0b0;
+    max-height: calc(100vh - 62px);
+  }
+  .config::-webkit-scrollbar { width: 8px; }
+  .config::-webkit-scrollbar-track { background: transparent; }
+  .config::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .config::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    margin-bottom: 18px;
+  }
+  .presets { display: flex; gap: 6px; flex-wrap: wrap; }
+  .preset {
+    font-family: inherit; font-size: 10px; letter-spacing: 1.5px;
+    text-transform: uppercase; padding: 7px 14px;
+    background: var(--panel); color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px;
+    cursor: pointer; transition: all .15s;
+  }
+  .preset:hover { color: var(--text); border-color: var(--accent); }
+  .preset.active {
+    background: color-mix(in oklab, var(--accent) 14%, transparent);
+    color: var(--accent); border-color: var(--accent);
+    box-shadow: var(--glow);
+  }
+
+  .search {
+    flex: 1; min-width: 180px; position: relative;
+  }
+  .search input {
+    width: 100%; font-family: inherit; font-size: 12px;
+    padding: 9px 14px 9px 34px;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    outline: none; transition: border .15s;
+  }
+  .search input:focus { border-color: var(--accent); box-shadow: var(--glow); }
+  .search::before {
+    content: '⌕';
+    position: absolute; left: 12px; top: 50%;
+    transform: translateY(-50%); color: var(--muted); font-size: 14px;
+  }
+  .kbd {
+    font-size: 9px; padding: 2px 6px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 3px; color: var(--muted);
+  }
+
+  .bulk-actions { display: flex; gap: 6px; }
+  .chip {
+    font-family: inherit; font-size: 10px; letter-spacing: 1px;
+    padding: 6px 10px; text-transform: uppercase;
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    cursor: pointer; transition: all .15s;
+  }
+  .chip:hover { color: var(--text); border-color: var(--muted); }
+
+  /* category section */
+  .section {
+    margin-bottom: 14px;
+    background: color-mix(in oklab, var(--panel) 60%, transparent);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color .15s;
+  }
+  .section:hover { border-color: var(--border); }
+  .section[data-collapsed="true"] .section-body { display: none; }
+  .section[data-collapsed="true"] .caret { transform: rotate(-90deg); }
+
+  .section-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; cursor: pointer; user-select: none;
+    border-bottom: 1px solid transparent;
+  }
+  .section[data-collapsed="false"] .section-head { border-bottom-color: var(--border-soft); }
+  .section-icon {
+    width: 30px; height: 30px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    background: color-mix(in oklab, var(--accent) 10%, transparent);
+    border: 1px solid color-mix(in oklab, var(--accent) 22%, transparent);
+    border-radius: 5px;
+  }
+  .section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 14px; font-weight: 500; letter-spacing: 1px;
+    flex: 1;
+  }
+  .counter {
+    font-size: 10px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .counter b { color: var(--accent); font-weight: 500; }
+  .badge {
+    font-size: 9px; letter-spacing: 1.5px;
+    padding: 3px 7px; border-radius: 3px;
+  }
+  .b-crit { background: color-mix(in oklab, var(--danger) 16%, transparent); color: var(--danger); border: 1px solid color-mix(in oklab, var(--danger) 32%, transparent); }
+  .b-high { background: color-mix(in oklab, var(--warn) 16%, transparent);   color: var(--warn);   border: 1px solid color-mix(in oklab, var(--warn) 32%, transparent); }
+  .b-med  { background: color-mix(in oklab, var(--accent-3) 16%, transparent); color: var(--accent-3); border: 1px solid color-mix(in oklab, var(--accent-3) 32%, transparent); }
+  .caret { color: var(--muted); transition: transform .2s; font-size: 11px; }
+
+  .section-body { padding: 6px; }
+
+  .row {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    gap: 12px; align-items: center;
+    padding: 10px 12px; margin: 2px 0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .12s;
+    border: 1px solid transparent;
+  }
+  .row:hover { background: color-mix(in oklab, var(--text) 4%, transparent); }
+  .row.on { border-color: color-mix(in oklab, var(--accent) 20%, transparent); background: color-mix(in oklab, var(--accent) 5%, transparent); }
+  .row.on .name { color: var(--accent); }
+  .row[hidden] { display: none; }
+
+  .sw {
+    width: 34px; height: 20px; position: relative;
+    border-radius: 999px;
+    background: var(--border); border: 1px solid var(--border-soft);
+    transition: all .18s;
+  }
+  .sw::after {
+    content: ''; position: absolute;
+    left: 2px; top: 2px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--dim); transition: all .18s;
+  }
+  .row.on .sw {
+    background: color-mix(in oklab, var(--accent) 30%, transparent);
+    border-color: var(--accent);
+  }
+  .row.on .sw::after {
+    transform: translateX(14px); background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  .name { font-size: 12.5px; color: var(--text); margin-bottom: 2px; }
+  .desc { font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+  .tag {
+    font-size: 9px; letter-spacing: 1px; padding: 2px 6px;
+    color: var(--accent-3); background: color-mix(in oklab, var(--accent-3) 10%, transparent);
+    border: 1px solid color-mix(in oklab, var(--accent-3) 22%, transparent);
+    border-radius: 3px; white-space: nowrap;
+  }
+
+  /* ─────────── right: output panel ─────────── */
+  .output {
+    background: var(--bg-2);
+    position: sticky; top: 62px;
+    height: calc(100vh - 62px);
+    display: flex; flex-direction: column;
+    border-left: 1px solid var(--border);
+  }
+  .output-head {
+    padding: 14px 18px;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-r { background: #ff5f57; } .dot-y { background: #febc2e; } .dot-g { background: #28c840; }
+  .output-title {
+    margin-left: 8px; flex: 1;
+    font-size: 10.5px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted);
+  }
+  .btn {
+    font-family: inherit; font-size: 10px; letter-spacing: 1.2px;
+    padding: 7px 14px; border-radius: 4px;
+    cursor: pointer; border: none; text-transform: uppercase;
+    transition: all .15s;
+  }
+  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { color: var(--text); border-color: var(--accent); }
+  .btn-primary {
+    background: var(--accent); color: var(--bg); font-weight: 700;
+    box-shadow: 0 0 12px color-mix(in oklab, var(--accent) 30%, transparent);
+  }
+  .btn-primary:hover { filter: brightness(1.1); box-shadow: 0 0 20px color-mix(in oklab, var(--accent) 50%, transparent); }
+
+  .code-wrap { position: relative; flex: 1; overflow: hidden; }
+  .code {
+    position: absolute; inset: 0;
+    overflow: auto;
+    padding: 16px 20px;
+    font-size: 11px; line-height: 1.65;
     white-space: pre;
     font-family: 'JetBrains Mono', monospace;
+    color: #aab5c3;
   }
+  .code::-webkit-scrollbar { width: 6px; height: 6px; }
+  .code::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .c-cm { color: color-mix(in oklab, var(--muted) 80%, transparent); font-style: italic; }
+  .c-sh { color: var(--muted); }
+  .c-kw { color: var(--accent-2); }
+  .c-cmd{ color: var(--accent-3); }
+  .c-st { color: color-mix(in oklab, var(--accent) 85%, white 15%); }
+  .c-vr { color: var(--warn); }
+  .c-sec{ color: var(--accent); font-weight: 700; letter-spacing: 1px; }
 
-  .output-code .c-comment { color: #3a4a5a; }
-  .output-code .c-keyword { color: #ff6b9d; }
-  .output-code .c-cmd { color: #61dafb; }
-  .output-code .c-str { color: #98d982; }
-  .output-code .c-var { color: #ffd700; }
-  .output-code .c-section { color: var(--accent); font-weight: bold; }
-
-  .stats-bar {
-    padding: 12px 20px;
+  .stats {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 16px; padding: 14px 20px;
     border-top: 1px solid var(--border);
-    display: flex;
-    gap: 20px;
-    font-size: 10px;
-    color: var(--muted);
-  }
-
-  .stat { display: flex; flex-direction: column; gap: 2px; }
-  .stat-val { color: var(--text); font-size: 14px; font-weight: 500; }
-  .stat-lbl { letter-spacing: 1px; text-transform: uppercase; font-size: 9px; }
-
-  .score-ring {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .score-num {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 28px;
-    color: var(--accent);
-    text-shadow: 0 0 10px rgba(0,255,136,0.3);
-    line-height: 1;
-  }
-
-  .score-label { font-size: 9px; color: var(--muted); letter-spacing: 1px; }
-
-  /* Toast */
-  .toast {
-    position: fixed;
-    bottom: 24px; right: 24px;
     background: var(--panel);
-    border: 1px solid var(--accent);
-    color: var(--accent);
-    padding: 10px 18px;
-    border-radius: 4px;
-    font-size: 11px;
-    letter-spacing: 1px;
-    box-shadow: 0 0 20px rgba(0,255,136,0.2);
-    transform: translateY(80px);
-    opacity: 0;
-    transition: all 0.3s ease;
-    z-index: 999;
   }
+  .stat-val { font-family: 'Bebas Neue', sans-serif; font-size: 24px; line-height: 1; color: var(--text); }
+  .stat-lbl { font-size: 9px; letter-spacing: 1.5px; color: var(--muted); text-transform: uppercase; margin-top: 4px; }
+  .score { color: var(--accent); text-shadow: 0 0 10px color-mix(in oklab, var(--accent) 45%, transparent); }
+  .bar { height: 3px; border-radius: 2px; background: var(--border); margin-top: 6px; overflow: hidden; }
+  .bar > div { height: 100%; background: linear-gradient(90deg, var(--accent-3), var(--accent)); transition: width .3s; }
 
+  /* toast */
+  .toast {
+    position: fixed; bottom: 20px; right: 20px; z-index: 200;
+    background: var(--panel); color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 10px 18px; border-radius: 4px;
+    font-size: 11px; letter-spacing: 1px;
+    box-shadow: var(--glow);
+    transform: translateY(80px); opacity: 0;
+    transition: all .25s ease;
+  }
   .toast.show { transform: translateY(0); opacity: 1; }
 
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  /* responsive */
+  @media (max-width: 960px) {
+    main { grid-template-columns: 1fr; }
+    .output { position: static; height: 60vh; border-left: none; border-top: 1px solid var(--border); }
+    .config { max-height: none; }
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">Linux<span>Harden</span></div>
-  <div class="subtitle">System Security Generator // v2.0</div>
-  <div class="status-bar">
-    <div class="status-dot"></div>
-    <span>READY</span>
+  <div class="logo">linux<span>harden</span></div>
+  <div class="sub">system security generator · v3.0</div>
+  <div class="spacer"></div>
+  <div class="theme-switch" id="themeSwitch" title="Theme">
+    <button class="sw-cyber"      data-theme="cyber"     title="Cyber"></button>
+    <button class="sw-synthwave"  data-theme="synthwave" title="Synthwave"></button>
+    <button class="sw-matrix"     data-theme="matrix"    title="Matrix"></button>
+    <button class="sw-nord"       data-theme="nord"      title="Nord"></button>
   </div>
 </header>
 
 <main>
-  <div class="config-panel" id="configPanel">
-
-    <!-- Section: Package Installation -->
-    <div class="section">
-      <div class="section-header">
-        <div class="section-icon">📦</div>
-        <div class="section-title">Package Installation</div>
-        <span class="section-badge badge-critical">CRITICAL</span>
+  <!-- ─────────── left: configuration ─────────── -->
+  <div class="config">
+    <div class="toolbar">
+      <div class="presets" id="presets">
+        <button class="preset" data-profile="minimal">Minimal</button>
+        <button class="preset active" data-profile="balanced">Balanced</button>
+        <button class="preset" data-profile="paranoid">Paranoid</button>
       </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="pkg_firewalld" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Install firewalld</div>
-          <div class="option-desc">Dynamic firewall daemon with D-Bus interface. Manages nftables/iptables rules at runtime.</div>
-        </div>
-        <span class="option-tag">FIREWALL</span>
+      <div class="search">
+        <input id="search" type="text" placeholder="filter options…" autocomplete="off">
       </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="pkg_apparmor" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Install AppArmor</div>
-          <div class="option-desc">Mandatory access control system. Confines programs to a limited set of resources via per-program profiles.</div>
-        </div>
-        <span class="option-tag">MAC</span>
+      <div class="bulk-actions">
+        <button class="chip" id="selAll">All on</button>
+        <button class="chip" id="selNone">All off</button>
+        <button class="chip" id="importCfg">Import</button>
+        <button class="chip" id="exportCfg">Export</button>
       </div>
     </div>
 
-    <!-- Section: Kernel Hardening -->
-    <div class="section">
-      <div class="section-header">
-        <div class="section-icon">⚙️</div>
-        <div class="section-title">Kernel Parameters</div>
-        <span class="section-badge badge-critical">CRITICAL</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="k_kptr" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Restrict kernel pointer exposure</div>
-          <div class="option-desc">kptr_restrict=2 — hides kernel pointers from all users, mitigating KASLR bypass attacks.</div>
-        </div>
-        <span class="option-tag">KASLR</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="k_dmesg" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Restrict dmesg access</div>
-          <div class="option-desc">dmesg_restrict=1 — prevents unprivileged users from reading kernel ring buffer (info leak mitigation).</div>
-        </div>
-        <span class="option-tag">INFO LEAK</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="k_aslr" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Full ASLR randomization</div>
-          <div class="option-desc">randomize_va_space=2 — enables full address space layout randomization including heap/stack/mmap.</div>
-        </div>
-        <span class="option-tag">ASLR</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="k_bpf" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Disable unprivileged BPF</div>
-          <div class="option-desc">Prevents unprivileged users from loading eBPF programs, which are a common attack vector for kernel exploits.</div>
-        </div>
-        <span class="option-tag">BPF</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="k_ptrace" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Restrict ptrace scope (Yama)</div>
-          <div class="option-desc">yama.ptrace_scope=1 — allows ptrace only on child processes, blocking process injection between unrelated processes.</div>
-        </div>
-        <span class="option-tag">PTRACE</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="k_sysrq" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Disable SysRq key</div>
-          <div class="option-desc">sysrq=0 — disables the magic SysRq key entirely, preventing physical-access attacks via keyboard shortcuts.</div>
-        </div>
-        <span class="option-tag">PHYSICAL</span>
-      </div>
-    </div>
-
-    <!-- Section: Filesystem -->
-    <div class="section">
-      <div class="section-header">
-        <div class="section-icon">🗂️</div>
-        <div class="section-title">Filesystem Protections</div>
-        <span class="section-badge badge-high">HIGH</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="fs_links" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Protect hardlinks &amp; symlinks</div>
-          <div class="option-desc">Prevents users from following symlinks or hardlinks they don't own, blocking TOCTOU attack patterns.</div>
-        </div>
-        <span class="option-tag">TOCTOU</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="fs_fifos" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Protect FIFOs &amp; regular files</div>
-          <div class="option-desc">protected_fifos=2 / protected_regular=2 — blocks privilege escalation via world-writable sticky directories.</div>
-        </div>
-        <span class="option-tag">PRIVESC</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="fs_coredump" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Disable SUID core dumps</div>
-          <div class="option-desc">suid_dumpable=0 — prevents setuid processes from writing core dumps which could expose sensitive data.</div>
-        </div>
-        <span class="option-tag">COREDUMP</span>
-      </div>
-    </div>
-
-    <!-- Section: Network -->
-    <div class="section">
-      <div class="section-header">
-        <div class="section-icon">🌐</div>
-        <div class="section-title">Network Hardening</div>
-        <span class="section-badge badge-high">HIGH</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="net_redirects" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Disable ICMP redirects</div>
-          <div class="option-desc">Prevents routing table manipulation via spoofed ICMP redirect messages — common MitM vector on LANs.</div>
-        </div>
-        <span class="option-tag">MITM</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="net_source_route" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Disable source routing</div>
-          <div class="option-desc">Drops packets with IP source routing options, preventing route spoofing and traffic redirection attacks.</div>
-        </div>
-        <span class="option-tag">SPOOFING</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="net_syncookies" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">TCP SYN cookies</div>
-          <div class="option-desc">Enables SYN flood protection without dropping legitimate connections. Essential for internet-facing services.</div>
-        </div>
-        <span class="option-tag">SYN FLOOD</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="net_rp_filter" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Reverse path filtering</div>
-          <div class="option-desc">rp_filter=2 — validates source address of incoming packets, mitigating IP spoofing and DDoS amplification.</div>
-        </div>
-        <span class="option-tag">IP SPOOF</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="net_icmp_bcast" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Ignore broadcast ICMP &amp; bogus errors</div>
-          <div class="option-desc">Prevents Smurf amplification attacks and suppresses bogus ICMP error responses that can cause issues.</div>
-        </div>
-        <span class="option-tag">SMURF</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="net_ipv6" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Disable IPv6 redirects</div>
-          <div class="option-desc">Applies the same ICMP redirect protections to IPv6 interfaces, preventing IPv6-based routing attacks.</div>
-        </div>
-        <span class="option-tag">IPv6</span>
-      </div>
-    </div>
-
-    <!-- Section: Firewall Rules -->
-    <div class="section">
-      <div class="section-header">
-        <div class="section-icon">🔥</div>
-        <div class="section-title">Firewall Rules</div>
-        <span class="section-badge badge-high">HIGH</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="fw_ssh" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Allow SSH (port 22)</div>
-          <div class="option-desc">Permits inbound SSH connections. Disable if you have an alternative remote access method or different port.</div>
-        </div>
-        <span class="option-tag">SSH</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="fw_https" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Allow HTTPS (port 443)</div>
-          <div class="option-desc">Permits inbound HTTPS traffic. Required for web servers. Disable for pure backend or desktop systems.</div>
-        </div>
-        <span class="option-tag">HTTPS</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="fw_dot" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Allow DNS-over-TLS (port 853)</div>
-          <div class="option-desc">Required when using systemd-resolved with DoT enabled. Permits outbound encrypted DNS queries.</div>
-        </div>
-        <span class="option-tag">DNS</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="fw_dccp_sctp" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Drop DCCP &amp; SCTP protocols</div>
-          <div class="option-desc">Drops obscure transport protocols rarely used legitimately but commonly abused by scanners and exploits.</div>
-        </div>
-        <span class="option-tag">RECON</span>
-      </div>
-    </div>
-
-    <!-- Section: DNS over TLS -->
-    <div class="section">
-      <div class="section-header">
-        <div class="section-icon">🔐</div>
-        <div class="section-title">Encrypted DNS</div>
-        <span class="section-badge badge-medium">MEDIUM</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="dns_enable" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Configure systemd-resolved with DoT</div>
-          <div class="option-desc">Routes all DNS through Cloudflare (1.1.1.1) with TLS encryption. Fallback to Quad9 (9.9.9.9).</div>
-        </div>
-        <span class="option-tag">DoT</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="dns_dnssec" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Enable DNSSEC validation</div>
-          <div class="option-desc">Cryptographically verifies DNS responses, protecting against cache poisoning and DNS spoofing attacks.</div>
-        </div>
-        <span class="option-tag">DNSSEC</span>
-      </div>
-    </div>
-
-    <!-- Section: AppArmor -->
-    <div class="section">
-      <div class="section-header">
-        <div class="section-icon">🛡️</div>
-        <div class="section-title">AppArmor Profiles</div>
-        <span class="section-badge badge-medium">MEDIUM</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="aa_avahi" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Enforce avahi-daemon profile</div>
-          <div class="option-desc">Confines the mDNS/DNS-SD service. Recommended if Avahi is present; reduces local network attack surface.</div>
-        </div>
-        <span class="option-tag">AVAHI</span>
-      </div>
-      <div class="toggle-row active" onclick="toggle(this)">
-        <label class="toggle"><input type="checkbox" id="aa_dnsmasq" checked onchange="render()"><div class="toggle-track"></div></label>
-        <div class="option-info">
-          <div class="option-name">Enforce dnsmasq profile</div>
-          <div class="option-desc">Confines the dnsmasq DNS/DHCP server. Apply when dnsmasq is used as a local resolver or DHCP service.</div>
-        </div>
-        <span class="option-tag">DNSMASQ</span>
-      </div>
-    </div>
-
+    <div id="sections"></div>
   </div>
 
-  <!-- Output Panel -->
-  <div class="output-panel">
-    <div class="output-header">
-      <span class="output-title">Generated Script</span>
-      <button class="btn btn-ghost" onclick="copyScript()">Copy</button>
-      <button class="btn btn-primary" onclick="downloadScript()">Download</button>
+  <!-- ─────────── right: output ─────────── -->
+  <div class="output">
+    <div class="output-head">
+      <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+      <span class="output-title">harden.sh · generated</span>
+      <button class="btn btn-ghost" id="btnCopy">Copy</button>
+      <button class="btn btn-primary" id="btnDl">Download</button>
     </div>
-    <div class="output-code" id="outputCode"></div>
-    <div class="stats-bar">
-      <div class="stat">
-        <span class="stat-val" id="lineCount">0</span>
-        <span class="stat-lbl">Lines</span>
+    <div class="code-wrap"><pre class="code" id="code"></pre></div>
+    <div class="stats">
+      <div>
+        <div class="stat-val" id="sLines">0</div>
+        <div class="stat-lbl">lines</div>
       </div>
-      <div class="stat">
-        <span class="stat-val" id="featureCount">0</span>
-        <span class="stat-lbl">Features</span>
+      <div>
+        <div class="stat-val" id="sFeat">0 / 0</div>
+        <div class="stat-lbl">enabled</div>
       </div>
-      <div class="score-ring">
-        <div>
-          <div class="score-num" id="scoreNum">100</div>
-          <div class="score-label">Security Score</div>
-        </div>
+      <div>
+        <div class="stat-val" id="sSize">0 B</div>
+        <div class="stat-lbl">size</div>
+      </div>
+      <div>
+        <div class="stat-val score" id="sScore">0</div>
+        <div class="stat-lbl">hardness</div>
+        <div class="bar"><div id="sBar" style="width:0%"></div></div>
       </div>
     </div>
   </div>
 </main>
 
 <div class="toast" id="toast"></div>
+<input type="file" id="importFile" accept="application/json" style="display:none">
 
 <script>
-function toggle(row) {
-  const cb = row.querySelector('input[type=checkbox]');
-  cb.checked = !cb.checked;
-  row.classList.toggle('active', cb.checked);
-  render();
+/* =====================================================================
+   Data model
+   ===================================================================== */
+const SECTIONS = [
+  {
+    id: 'packages', title: 'Package Installation', icon: '📦', badge: ['b-crit','CRIT'],
+    opts: [
+      ['pkg_firewalld', true,  'Install firewalld',           'Dynamic firewall daemon managing nftables at runtime.',          'firewall'],
+      ['pkg_apparmor',  true,  'Install AppArmor',            'Mandatory access control via per-program profiles.',             'mac'],
+    ],
+  },
+  {
+    id: 'sysctl', title: 'Kernel Parameters', icon: '⚙', badge: ['b-crit','CRIT'],
+    opts: [
+      ['k_kptr',     true, 'Hide kernel pointers',             'kptr_restrict=2 · mitigates KASLR bypass by hiding pointers from all users.',   'kaslr'],
+      ['k_dmesg',    true, 'Restrict dmesg',                    'dmesg_restrict=1 · prevent unprivileged users from reading the kernel ring buffer.', 'infoleak'],
+      ['k_printk',   true, 'Quiet kernel log levels',           'printk=3 3 3 3 · reduces log noise and kernel info exposure.',                  'infoleak'],
+      ['k_kexec',    true, 'Disable kexec_load',                'kexec_load_disabled=1 · prevents loading a new kernel at runtime.',             'kernel'],
+      ['k_aslr',     true, 'Full ASLR',                         'randomize_va_space=2 · full address-space layout randomisation.',               'aslr'],
+      ['k_bpf',      true, 'Disable unprivileged BPF',          'unprivileged_bpf_disabled=1 · closes a common kernel-exploit surface.',         'bpf'],
+      ['k_ptrace',   true, 'Restrict ptrace (Yama=2)',          'yama.ptrace_scope=2 · only admin may attach to other processes.',               'ptrace'],
+      ['k_sysrq',    true, 'Disable SysRq',                     'sysrq=0 · disables magic SysRq key entirely.',                                  'physical'],
+      ['k_perf',     true, 'Restrict perf_event',               'perf_event_paranoid=3 · denies perf subsystem to non-root.',                    'kernel'],
+      ['k_userns',   false,'Disable unprivileged userns',       'Blocks unprivileged user namespaces (breaks Chrome sandbox, Flatpak, podman).', 'compat'],
+      ['k_tty',      true, 'Disable TTY line-discipline autoload', 'dev.tty.ldisc_autoload=0 · historic local-privesc vector.',                  'physical'],
+    ],
+  },
+  {
+    id: 'fs', title: 'Filesystem Protections', icon: '🗂', badge: ['b-high','HIGH'],
+    opts: [
+      ['fs_links',    true, 'Protect hard/symlinks',   'Blocks TOCTOU via links you don\'t own.',                              'toctou'],
+      ['fs_fifos',    true, 'Protect FIFOs & regular', 'protected_fifos=2 / protected_regular=2 · stops sticky-dir privesc.',   'privesc'],
+      ['fs_coredump', true, 'SUID core dumps off',     'suid_dumpable=0 · no core dumps from setuid programs.',                 'leak'],
+    ],
+  },
+  {
+    id: 'network', title: 'Network Hardening', icon: '🌐', badge: ['b-high','HIGH'],
+    opts: [
+      ['net_redirects',    true, 'Drop ICMP redirects',        'No accepting/sending ICMP redirects — prevents route tampering.', 'mitm'],
+      ['net_source_route', true, 'No source routing',           'Drops IP options used for traffic-steering attacks.',             'spoof'],
+      ['net_syncookies',   true, 'TCP SYN cookies',             'SYN flood resistance without dropping legitimate traffic.',       'dos'],
+      ['net_rfc1337',      true, 'TCP RFC1337',                 'Protect against TIME-WAIT assassination.',                        'tcp'],
+      ['net_rp_filter',    true, 'Reverse path filter',         'Drops packets with impossible source addresses.',                 'spoof'],
+      ['net_martians',     true, 'Log martian packets',         'log_martians=1 · logs suspicious packets for investigation.',     'audit'],
+      ['net_icmp_bcast',   true, 'Drop broadcast ICMP',         'Blocks Smurf-style amplification and bogus ICMP replies.',        'smurf'],
+      ['net_forward',      true, 'Disable IPv4/IPv6 forwarding','ip_forward=0 · refuse to route traffic between interfaces.',     'routing'],
+      ['net_timestamps',   true, 'Disable TCP timestamps',      'Reduces fingerprinting & uptime leaks.',                          'recon'],
+      ['net_ipv6',         true, 'Harden IPv6',                 'No RA, redirects, source routing or forwarding on IPv6.',         'ipv6'],
+    ],
+  },
+  {
+    id: 'modules', title: 'Kernel Module Blacklist', icon: '🧩', badge: ['b-med','MED'],
+    opts: [
+      ['mod_legacy_net', true,  'Legacy net protocols',  'dccp, sctp, rds, tipc, decnet, ax25, x25, ipx, appletalk.',     'protocol'],
+      ['mod_legacy_fs',  true,  'Obsolete filesystems',  'cramfs, freevxfs, jffs2, hfs, hfsplus, squashfs, udf.',          'fs'],
+      ['mod_firewire',   true,  'FireWire / Thunderbolt','Block DMA-capable buses used in physical attacks.',              'dma'],
+      ['mod_usb_storage',false, 'USB mass-storage',      'Aggressive — blocks USB drives entirely. Pair with usbguard.',    'extreme'],
+    ],
+  },
+  {
+    id: 'firewall', title: 'Firewall Rules', icon: '🔥', badge: ['b-high','HIGH'],
+    opts: [
+      ['fw_default_deny', true,  'Default-deny inbound', 'Set zone target to DROP; only explicitly allowed traffic passes.',   'policy'],
+      ['fw_ssh',          true,  'Allow SSH (22/tcp)',   'Permit inbound SSH. Disable if you only connect out.',               'ssh'],
+      ['fw_https',        true,  'Allow HTTPS (443/tcp)','Permit inbound HTTPS. Leave on for web servers only.',               'https'],
+      ['fw_dot',          true,  'Allow DoT (853/tcp)',  'Required for outbound encrypted DNS.',                                'dns'],
+      ['fw_dccp_sctp',    true,  'Drop DCCP & SCTP',     'Obscure protocols commonly used by scanners & exploits.',            'recon'],
+      ['fw_ratelimit_ssh',true,  'Rate-limit SSH',       '3 new SSH connections/minute per source — mitigates brute force.',   'brute'],
+    ],
+  },
+  {
+    id: 'dns', title: 'Encrypted DNS', icon: '🔐', badge: ['b-med','MED'],
+    opts: [
+      ['dns_dot',    true, 'DNS-over-TLS',      'Route DNS through Cloudflare+Quad9 over TLS.',                   'dot'],
+      ['dns_dnssec', true, 'DNSSEC validation', 'Cryptographic DNS auth — blocks cache poisoning/spoofing.',      'dnssec'],
+      ['dns_cache',  true, 'Resolver cache',    'Cache=yes on systemd-resolved — faster lookups.',                'perf'],
+    ],
+  },
+  {
+    id: 'apparmor', title: 'AppArmor Profiles', icon: '🛡', badge: ['b-med','MED'],
+    opts: [
+      ['aa_avahi',   true, 'Enforce avahi-daemon',  'Confines mDNS/DNS-SD daemon.',                       'avahi'],
+      ['aa_dnsmasq', true, 'Enforce dnsmasq',       'Confines local DNS/DHCP resolver.',                 'dnsmasq'],
+      ['aa_cups',    true, 'Enforce cups-browsed',  'Confines the CUPS browsing helper.',                'cups'],
+      ['aa_firefox', true, 'Enforce firefox',       'Enforces browser profile where present.',           'browser'],
+    ],
+  },
+  {
+    id: 'ssh', title: 'SSH Daemon', icon: '🔑', badge: ['b-high','HIGH'],
+    opts: [
+      ['ssh_noroot',     true, 'Disable root login',         'PermitRootLogin no.',                                        'root'],
+      ['ssh_nopassword', true, 'Key-only authentication',    'PasswordAuthentication no — require public-key auth.',       'auth'],
+      ['ssh_noforward',  true, 'Disable forwarding',         'No X11, agent, or TCP forwarding.',                          'tunnel'],
+      ['ssh_timeouts',   true, 'Idle/login timeouts',        'ClientAliveInterval + LoginGraceTime kill idle sessions.',   'session'],
+      ['ssh_crypto',     true, 'Modern crypto only',         'Restrict to curve25519, ChaCha20, AES-GCM, Ed25519.',        'crypto'],
+      ['ssh_banner',     true, 'Show legal banner',          'Display /etc/issue.net pre-auth.',                           'legal'],
+    ],
+  },
+  {
+    id: 'login', title: 'Login & Password Policy', icon: '👤', badge: ['b-med','MED'],
+    opts: [
+      ['pw_aging',       true, 'Password aging (180d)',    'PASS_MAX_DAYS=180, PASS_WARN_AGE=14.',                          'policy'],
+      ['pw_umask',       true, 'Tighter default umask',    'UMASK 027 · new files not world-readable.',                     'perms'],
+      ['pw_yescrypt',    true, 'yescrypt password hashing','Modern memory-hard KDF for /etc/shadow.',                      'crypto'],
+      ['pw_quality',     true, 'pwquality rules',          'min 12 chars, 3 classes, dict+user checks, root included.',     'strength'],
+      ['pw_faillock',    true, 'faillock lockout',         '5 failures → 15 min lockout.',                                  'brute'],
+    ],
+  },
+  {
+    id: 'coredump', title: 'Core Dumps', icon: '🪦', badge: ['b-med','MED'],
+    opts: [
+      ['cd_limits',   true, 'ulimit core=0',                'Hard+soft core ulimit 0 in /etc/security/limits.d.',           'limits'],
+      ['cd_systemd',  true, 'systemd-coredump disabled',    'Storage=none in coredump.conf.',                               'systemd'],
+    ],
+  },
+  {
+    id: 'auditd', title: 'Auditd (syscall auditing)', icon: '📝', badge: ['b-med','MED'],
+    opts: [
+      ['ad_install',  true, 'Install & enable auditd',      'Start the audit daemon at boot.',                             'service'],
+      ['ad_rules',    true, 'Baseline rules',               'Watch identity files, sudoers, sshd_config, module loading.',  'rules'],
+    ],
+  },
+  {
+    id: 'fail2ban', title: 'Fail2ban', icon: '🚫', badge: ['b-med','MED'],
+    opts: [
+      ['fb_install', false, 'Install fail2ban',             'IP-based rate-limiting on top of firewalld.',                   'service'],
+      ['fb_sshd',    false, 'Ban sshd bruteforce',          '5 failures / 10 min → 1 hour ban.',                             'brute'],
+    ],
+  },
+  {
+    id: 'updates', title: 'Automatic Updates', icon: '⬆', badge: ['b-med','MED'],
+    opts: [
+      ['up_auto',     false, 'Enable unattended upgrades',  'debian/ubuntu: unattended-upgrades; rhel: dnf-automatic; arch: paccache.', 'maint'],
+    ],
+  },
+  {
+    id: 'usbguard', title: 'USBGuard', icon: '🔌', badge: ['b-high','HIGH'],
+    opts: [
+      ['ug_install',  false, 'Install USBGuard',            'Whitelist-only USB devices. Review rules.conf before reboot!', 'physical'],
+    ],
+  },
+  {
+    id: 'banner', title: 'Legal Banner', icon: '⚠', badge: ['b-med','LOW'],
+    opts: [
+      ['bn_issue', true, 'Write /etc/issue + issue.net + motd', 'Display a legal-use notice on login.', 'legal'],
+    ],
+  },
+  {
+    id: 'accounting', title: 'Process Accounting', icon: '📊', badge: ['b-med','LOW'],
+    opts: [
+      ['pa_install', false, 'Enable process accounting',    'acct/psacct records process invocations for forensics.',        'forensic'],
+    ],
+  },
+  {
+    id: 'aide', title: 'AIDE File Integrity', icon: '🔍', badge: ['b-med','MED'],
+    opts: [
+      ['ai_install', false, 'Install AIDE + init DB',       'Cryptographic file-change monitoring. DB init is slow.',        'integrity'],
+    ],
+  },
+];
+
+const PROFILES = {
+  minimal:  new Set(['pkg_firewalld','pkg_apparmor','k_kptr','k_dmesg','k_aslr','k_bpf','k_ptrace','k_sysrq',
+                     'fs_links','fs_fifos','fs_coredump',
+                     'net_redirects','net_syncookies','net_rp_filter','net_icmp_bcast','net_ipv6',
+                     'fw_ssh','fw_https','fw_dot','fw_dccp_sctp',
+                     'dns_dot','dns_dnssec',
+                     'aa_avahi','aa_dnsmasq']),
+  balanced: new Set(['pkg_firewalld','pkg_apparmor',
+                     'k_kptr','k_dmesg','k_printk','k_kexec','k_aslr','k_bpf','k_ptrace','k_sysrq','k_perf','k_tty',
+                     'fs_links','fs_fifos','fs_coredump',
+                     'net_redirects','net_source_route','net_syncookies','net_rfc1337','net_rp_filter','net_martians','net_icmp_bcast','net_forward','net_timestamps','net_ipv6',
+                     'mod_legacy_net','mod_legacy_fs','mod_firewire',
+                     'fw_default_deny','fw_ssh','fw_https','fw_dot','fw_dccp_sctp','fw_ratelimit_ssh',
+                     'dns_dot','dns_dnssec','dns_cache',
+                     'aa_avahi','aa_dnsmasq','aa_cups','aa_firefox',
+                     'ssh_noroot','ssh_nopassword','ssh_noforward','ssh_timeouts','ssh_crypto','ssh_banner',
+                     'pw_aging','pw_umask','pw_yescrypt','pw_quality','pw_faillock',
+                     'cd_limits','cd_systemd',
+                     'ad_install','ad_rules',
+                     'up_auto',
+                     'bn_issue']),
+  paranoid: /* populated below — everything */ null,
+};
+PROFILES.paranoid = new Set(SECTIONS.flatMap(s => s.opts.map(o => o[0])));
+
+/* =====================================================================
+   Rendering
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const state = Object.create(null);
+
+function initState() {
+  for (const s of SECTIONS) for (const [id, def] of s.opts) state[id] = def;
+}
+initState();
+
+function buildUI() {
+  const root = $('sections');
+  for (const sec of SECTIONS) {
+    const el = document.createElement('div');
+    el.className = 'section';
+    el.dataset.collapsed = 'false';
+    el.dataset.sid = sec.id;
+    el.innerHTML = `
+      <div class="section-head">
+        <div class="section-icon">${sec.icon}</div>
+        <div class="section-title">${sec.title}</div>
+        <div class="counter"><b data-on>0</b> / <span data-total>${sec.opts.length}</span></div>
+        <span class="badge ${sec.badge[0]}">${sec.badge[1]}</span>
+        <span class="caret">▼</span>
+      </div>
+      <div class="section-body">
+        ${sec.opts.map(([id,def,name,desc,tag]) => `
+          <div class="row ${state[id]?'on':''}" data-oid="${id}">
+            <div class="sw"></div>
+            <div>
+              <div class="name">${name}</div>
+              <div class="desc">${desc}</div>
+            </div>
+            <span class="tag">${tag}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    root.appendChild(el);
+
+    el.querySelector('.section-head').addEventListener('click', (e) => {
+      if (e.target.closest('.row')) return;
+      el.dataset.collapsed = el.dataset.collapsed === 'true' ? 'false' : 'true';
+    });
+    el.querySelectorAll('.row').forEach(r => {
+      r.addEventListener('click', () => {
+        const id = r.dataset.oid;
+        state[id] = !state[id];
+        r.classList.toggle('on', state[id]);
+        render();
+      });
+    });
+  }
 }
 
-function get(id) {
-  return document.getElementById(id)?.checked ?? false;
-}
+/* =====================================================================
+   Script generation
+   ===================================================================== */
+function on(id) { return !!state[id]; }
 
 function generateScript() {
-  const lines = [];
+  const L = [];
+  const ts = new Date().toISOString();
+  L.push('#!/usr/bin/env bash');
+  L.push('# =====================================================================');
+  L.push('#  linux-hardening // generated by hardening-gui.html');
+  L.push(`#  timestamp: ${ts}`);
+  L.push('# =====================================================================');
+  L.push('set -euo pipefail');
+  L.push('');
+  L.push('log()  { printf "\\e[36m»\\e[0m %s\\n" "$*"; }');
+  L.push('ok()   { printf "\\e[32m✓\\e[0m %s\\n" "$*"; }');
+  L.push('step() { printf "\\n\\e[1;35m── %s ──\\e[0m\\n" "$*"; }');
+  L.push('');
+  L.push('if [ "$EUID" -ne 0 ]; then sudo -v || exit 1; exec sudo -E "$0" "$@"; fi');
+  L.push('');
+  L.push('# ── Distro detection ───────────────────────────────────────────');
+  L.push('if   command -v pacman  >/dev/null 2>&1; then PKG_I="pacman -S --needed --noconfirm"; PKG_R="pacman -Sy"; FAM=arch');
+  L.push('elif command -v apt-get >/dev/null 2>&1; then PKG_I="apt-get install -y";             PKG_R="apt-get update"; FAM=debian');
+  L.push('elif command -v dnf     >/dev/null 2>&1; then PKG_I="dnf install -y";                 PKG_R="dnf makecache";  FAM=rhel');
+  L.push('else echo "unsupported distribution" >&2; exit 1; fi');
+  L.push('ok "distro family: $FAM"');
+  L.push('');
 
-  lines.push(`#!/usr/bin/env bash`);
-  lines.push(`set -euo pipefail`);
-  lines.push(``);
-  lines.push(`# ============================================================`);
-  lines.push(`# LinuxHarden // Auto-generated security hardening script`);
-  lines.push(`# Generated: ${new Date().toISOString()}`);
-  lines.push(`# ============================================================`);
-  lines.push(``);
-  lines.push(`if [ "$EUID" -ne 0 ]; then`);
-  lines.push(`  sudo -v || exit 1`);
-  lines.push(`  exec sudo "$0" "$@"`);
-  lines.push(`fi`);
-  lines.push(``);
+  // Packages
+  if (on('pkg_firewalld') || on('pkg_apparmor')) {
+    L.push('step "Packages"');
+    L.push('$PKG_R');
+    const pacman = [], apt = [], dnf = [];
+    if (on('pkg_firewalld')) { pacman.push('firewalld'); apt.push('firewalld'); dnf.push('firewalld'); }
+    if (on('pkg_apparmor'))  { pacman.push('apparmor');  apt.push('apparmor apparmor-utils apparmor-profiles'); }
+    L.push(`[ "$FAM" = arch ]   && $PKG_I ${pacman.join(' ')}`);
+    L.push(`[ "$FAM" = debian ] && $PKG_I ${apt.join(' ')}`);
+    if (on('pkg_firewalld')) L.push(`[ "$FAM" = rhel ]   && $PKG_I ${dnf.join(' ')}`);
+    if (on('pkg_firewalld')) L.push('systemctl enable --now firewalld || true');
+    if (on('pkg_apparmor'))  L.push('[ "$FAM" != rhel ] && systemctl enable --now apparmor || true');
+    L.push('');
+  }
 
-  const needsPkg = get('pkg_firewalld') || get('pkg_apparmor');
-  if (needsPkg) {
-    lines.push(`# ── Package Installation ────────────────────────────────────`);
-    const pkgs_pacman = [];
-    const pkgs_apt = [];
-    if (get('pkg_firewalld')) { pkgs_pacman.push('firewalld'); pkgs_apt.push('firewalld'); }
-    if (get('pkg_apparmor')) { pkgs_pacman.push('apparmor'); pkgs_apt.push('apparmor apparmor-utils'); }
+  // sysctl
+  const sysctls = [];
+  const push = (p) => sysctls.push(p);
+  if (on('k_kptr'))    push('kernel.kptr_restrict=2');
+  if (on('k_dmesg'))   push('kernel.dmesg_restrict=1');
+  if (on('k_printk'))  push('kernel.printk=3 3 3 3');
+  if (on('k_kexec'))   push('kernel.kexec_load_disabled=1');
+  if (on('k_aslr'))    push('kernel.randomize_va_space=2');
+  if (on('k_bpf'))     push('kernel.unprivileged_bpf_disabled=1');
+  if (on('k_ptrace'))  push('kernel.yama.ptrace_scope=2');
+  if (on('k_sysrq'))   push('kernel.sysrq=0');
+  if (on('k_perf'))    push('kernel.perf_event_paranoid=3');
+  if (on('k_userns'))  push('kernel.unprivileged_userns_clone=0');
+  if (on('k_tty'))     push('dev.tty.ldisc_autoload=0');
 
-    lines.push(`if command -v pacman >/dev/null 2>&1; then`);
-    lines.push(`  pacman -Sy --noconfirm ${pkgs_pacman.join(' ')}`);
-    lines.push(`elif command -v apt-get >/dev/null 2>&1; then`);
-    lines.push(`  apt-get update`);
-    lines.push(`  apt-get install -y ${pkgs_apt.join(' ')}`);
-    lines.push(`else`);
-    lines.push(`  echo "Unsupported package manager" && exit 1`);
-    lines.push(`fi`);
-    lines.push(``);
+  const fsBlock = [];
+  if (on('fs_links'))    { fsBlock.push('fs.protected_hardlinks=1','fs.protected_symlinks=1'); }
+  if (on('fs_fifos'))    { fsBlock.push('fs.protected_fifos=2','fs.protected_regular=2'); }
+  if (on('fs_coredump')) { fsBlock.push('fs.suid_dumpable=0'); }
 
-    if (get('pkg_apparmor')) {
-      lines.push(`systemctl enable --now apparmor`);
+  const netBlock = [];
+  if (on('net_redirects')) netBlock.push(
+    'net.ipv4.conf.all.accept_redirects=0','net.ipv4.conf.default.accept_redirects=0',
+    'net.ipv4.conf.all.send_redirects=0','net.ipv4.conf.default.send_redirects=0',
+    'net.ipv4.conf.all.secure_redirects=0','net.ipv4.conf.default.secure_redirects=0'
+  );
+  if (on('net_source_route')) netBlock.push(
+    'net.ipv4.conf.all.accept_source_route=0','net.ipv4.conf.default.accept_source_route=0'
+  );
+  if (on('net_syncookies')) netBlock.push('net.ipv4.tcp_syncookies=1');
+  if (on('net_rfc1337'))    netBlock.push('net.ipv4.tcp_rfc1337=1');
+  if (on('net_rp_filter'))  netBlock.push('net.ipv4.conf.all.rp_filter=1','net.ipv4.conf.default.rp_filter=1');
+  if (on('net_martians'))   netBlock.push('net.ipv4.conf.all.log_martians=1','net.ipv4.conf.default.log_martians=1');
+  if (on('net_icmp_bcast')) netBlock.push('net.ipv4.icmp_echo_ignore_broadcasts=1','net.ipv4.icmp_ignore_bogus_error_responses=1');
+  if (on('net_forward'))    netBlock.push('net.ipv4.ip_forward=0','net.ipv6.conf.all.forwarding=0');
+  if (on('net_timestamps')) netBlock.push('net.ipv4.tcp_timestamps=0');
+  if (on('net_ipv6'))       netBlock.push(
+    'net.ipv6.conf.all.accept_redirects=0','net.ipv6.conf.default.accept_redirects=0',
+    'net.ipv6.conf.all.accept_source_route=0','net.ipv6.conf.default.accept_source_route=0',
+    'net.ipv6.conf.all.accept_ra=0','net.ipv6.conf.default.accept_ra=0'
+  );
+
+  if (sysctls.length + fsBlock.length + netBlock.length > 0) {
+    L.push('step "sysctl hardening"');
+    L.push("cat > /etc/sysctl.d/99-hardening.conf <<'EOF'");
+    if (sysctls.length) { L.push('# kernel'); sysctls.forEach(x=>L.push(x)); L.push(''); }
+    if (fsBlock.length) { L.push('# filesystem'); fsBlock.forEach(x=>L.push(x)); L.push(''); }
+    if (netBlock.length){ L.push('# network'); netBlock.forEach(x=>L.push(x)); }
+    L.push('EOF');
+    L.push('sysctl --system >/dev/null');
+    L.push('');
+  }
+
+  // modules
+  const modBlocks = [];
+  if (on('mod_legacy_net')) modBlocks.push(
+    ['# Legacy net protocols','dccp','sctp','rds','tipc','decnet','ax25','x25','ipx','appletalk']
+  );
+  if (on('mod_legacy_fs')) modBlocks.push(
+    ['# Obsolete filesystems','cramfs','freevxfs','jffs2','hfs','hfsplus','squashfs','udf']
+  );
+  if (on('mod_firewire')) modBlocks.push(
+    ['# DMA-capable buses','firewire-core','thunderbolt']
+  );
+  if (on('mod_usb_storage')) modBlocks.push(
+    ['# USB mass-storage (aggressive!)','usb-storage']
+  );
+  if (modBlocks.length) {
+    L.push('step "Kernel module blacklist"');
+    L.push("cat > /etc/modprobe.d/hardening.conf <<'EOF'");
+    modBlocks.forEach(blk => {
+      L.push(blk[0]);
+      blk.slice(1).forEach(m => L.push(`install ${m} /bin/false`));
+      L.push('');
+    });
+    L.push('EOF');
+    L.push('');
+  }
+
+  // firewall
+  const hasFw = ['fw_default_deny','fw_ssh','fw_https','fw_dot','fw_dccp_sctp','fw_ratelimit_ssh'].some(on);
+  if (on('pkg_firewalld') && hasFw) {
+    L.push('step "firewalld rules"');
+    L.push('firewall-cmd --set-default-zone=public >/dev/null');
+    if (on('fw_default_deny')) L.push('firewall-cmd --permanent --zone=public --set-target=DROP >/dev/null || true');
+    if (on('fw_ssh'))          L.push('firewall-cmd --permanent --zone=public --add-service=ssh');
+    if (on('fw_https'))        L.push('firewall-cmd --permanent --zone=public --add-service=https');
+    if (on('fw_dot'))          L.push('firewall-cmd --permanent --zone=public --add-port=853/tcp');
+    if (on('fw_dccp_sctp')) {
+      L.push("firewall-cmd --permanent --zone=public --add-rich-rule='rule protocol value=\"dccp\" drop' || true");
+      L.push("firewall-cmd --permanent --zone=public --add-rich-rule='rule protocol value=\"sctp\" drop' || true");
     }
-    if (get('pkg_firewalld')) {
-      lines.push(`systemctl enable --now firewalld`);
-    }
-    lines.push(``);
+    if (on('fw_ratelimit_ssh'))
+      L.push("firewall-cmd --permanent --zone=public --add-rich-rule='rule service name=\"ssh\" limit value=\"3/m\" accept' || true");
+    L.push('firewall-cmd --reload >/dev/null');
+    L.push('');
   }
 
-  const kernelParams = [];
-  if (get('k_kptr')) {
-    kernelParams.push(`kernel.kptr_restrict=2`);
-  }
-  if (get('k_dmesg')) {
-    kernelParams.push(`kernel.dmesg_restrict=1`);
-  }
-  if (get('k_aslr')) {
-    kernelParams.push(`kernel.randomize_va_space=2`);
-  }
-  if (get('k_bpf')) {
-    kernelParams.push(`kernel.unprivileged_bpf_disabled=1`);
-  }
-  if (get('k_ptrace')) {
-    kernelParams.push(`kernel.yama.ptrace_scope=1`);
-  }
-  if (get('k_sysrq')) {
-    kernelParams.push(`kernel.sysrq=0`);
+  // dns
+  if (on('dns_dot') || on('dns_dnssec') || on('dns_cache')) {
+    L.push('step "Encrypted DNS"');
+    L.push('systemctl enable --now systemd-resolved');
+    L.push('ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf');
+    L.push('mkdir -p /etc/systemd/resolved.conf.d');
+    L.push("cat > /etc/systemd/resolved.conf.d/hardening.conf <<'EOF'");
+    L.push('[Resolve]');
+    if (on('dns_dot')) {
+      L.push('DNS=1.1.1.1#cloudflare-dns.com 1.0.0.1#cloudflare-dns.com');
+      L.push('FallbackDNS=9.9.9.9#dns.quad9.net 149.112.112.112#dns.quad9.net');
+      L.push('DNSOverTLS=yes');
+    }
+    if (on('dns_dnssec')) L.push('DNSSEC=yes');
+    if (on('dns_cache'))  L.push('Cache=yes');
+    L.push('EOF');
+    L.push('systemctl restart systemd-resolved');
+    L.push('resolvectl flush-caches 2>/dev/null || true');
+    L.push('');
   }
 
-  const fsParams = [];
-  if (get('fs_links')) {
-    fsParams.push(`fs.protected_hardlinks=1`);
-    fsParams.push(`fs.protected_symlinks=1`);
-  }
-  if (get('fs_fifos')) {
-    fsParams.push(`fs.protected_fifos=2`);
-    fsParams.push(`fs.protected_regular=2`);
-  }
-  if (get('fs_coredump')) {
-    fsParams.push(`fs.suid_dumpable=0`);
+  // apparmor profiles
+  const aa = [['aa_avahi','/etc/apparmor.d/usr.sbin.avahi-daemon'],
+              ['aa_dnsmasq','/etc/apparmor.d/usr.sbin.dnsmasq'],
+              ['aa_cups','/etc/apparmor.d/usr.sbin.cups-browsed'],
+              ['aa_firefox','/etc/apparmor.d/usr.bin.firefox']];
+  if (on('pkg_apparmor') && aa.some(([id])=>on(id))) {
+    L.push('step "AppArmor enforce"');
+    aa.forEach(([id,p]) => { if (on(id)) L.push(`[ -f ${p} ] && aa-enforce ${p} 2>/dev/null || true`); });
+    L.push('');
   }
 
-  const netParams = [];
-  if (get('net_redirects')) {
-    netParams.push(`net.ipv4.conf.all.accept_redirects=0`);
-    netParams.push(`net.ipv4.conf.default.accept_redirects=0`);
-    netParams.push(`net.ipv4.conf.all.send_redirects=0`);
-    netParams.push(`net.ipv4.conf.default.send_redirects=0`);
-  }
-  if (get('net_source_route')) {
-    netParams.push(`net.ipv4.conf.all.accept_source_route=0`);
-    netParams.push(`net.ipv4.conf.default.accept_source_route=0`);
-  }
-  if (get('net_icmp_bcast')) {
-    netParams.push(`net.ipv4.icmp_echo_ignore_broadcasts=1`);
-    netParams.push(`net.ipv4.icmp_ignore_bogus_error_responses=1`);
-  }
-  if (get('net_syncookies')) {
-    netParams.push(`net.ipv4.tcp_syncookies=1`);
-  }
-  if (get('net_rp_filter')) {
-    netParams.push(`net.ipv4.conf.all.rp_filter=2`);
-    netParams.push(`net.ipv4.conf.default.rp_filter=2`);
-  }
-  if (get('net_ipv6')) {
-    netParams.push(`net.ipv6.conf.all.accept_redirects=0`);
-    netParams.push(`net.ipv6.conf.default.accept_redirects=0`);
+  // ssh
+  const sshAny = ['ssh_noroot','ssh_nopassword','ssh_noforward','ssh_timeouts','ssh_crypto','ssh_banner'].some(on);
+  if (sshAny) {
+    L.push('step "SSH daemon"');
+    L.push('if [ -f /etc/ssh/sshd_config ]; then');
+    L.push('  mkdir -p /etc/ssh/sshd_config.d');
+    L.push("  cat > /etc/ssh/sshd_config.d/99-hardening.conf <<'EOF'");
+    L.push('Protocol 2');
+    if (on('ssh_noroot'))     L.push('PermitRootLogin no');
+    if (on('ssh_nopassword')) { L.push('PasswordAuthentication no'); L.push('KbdInteractiveAuthentication no'); L.push('ChallengeResponseAuthentication no'); }
+    L.push('PermitEmptyPasswords no');
+    L.push('UsePAM yes');
+    if (on('ssh_noforward')) { L.push('X11Forwarding no'); L.push('AllowAgentForwarding no'); L.push('AllowTcpForwarding no'); L.push('PermitUserEnvironment no'); }
+    if (on('ssh_timeouts'))  { L.push('ClientAliveInterval 300'); L.push('ClientAliveCountMax 2'); L.push('LoginGraceTime 30'); L.push('MaxAuthTries 3'); L.push('MaxSessions 4'); }
+    L.push('LogLevel VERBOSE');
+    if (on('ssh_banner')) L.push('Banner /etc/issue.net');
+    if (on('ssh_crypto')) {
+      L.push('KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,diffie-hellman-group16-sha512,diffie-hellman-group18-sha512');
+      L.push('Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr');
+      L.push('MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com');
+      L.push('HostKeyAlgorithms ssh-ed25519,rsa-sha2-512,rsa-sha2-256');
+    }
+    L.push('EOF');
+    L.push('  systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null || true');
+    L.push('fi');
+    L.push('');
   }
 
-  if (kernelParams.length || fsParams.length || netParams.length) {
-    lines.push(`# ── Kernel / sysctl Parameters ──────────────────────────────`);
-    lines.push(`cat > /etc/sysctl.d/99-hardening.conf << 'EOF'`);
-    if (kernelParams.length) {
-      lines.push(`# Kernel`);
-      kernelParams.forEach(p => lines.push(p));
+  // login / password policy
+  const loginAny = ['pw_aging','pw_umask','pw_yescrypt','pw_quality','pw_faillock'].some(on);
+  if (loginAny) {
+    L.push('step "login & password policy"');
+    L.push('[ "$FAM" = debian ] && $PKG_I libpam-pwquality || $PKG_I libpwquality 2>/dev/null || true');
+    if (on('pw_aging') || on('pw_umask') || on('pw_yescrypt')) {
+      L.push('if [ -f /etc/login.defs ]; then');
+      if (on('pw_aging'))    { L.push('  sed -i -E "s|^#?\\s*PASS_MAX_DAYS.*|PASS_MAX_DAYS\\t180|" /etc/login.defs'); L.push('  sed -i -E "s|^#?\\s*PASS_WARN_AGE.*|PASS_WARN_AGE\\t14|"  /etc/login.defs'); }
+      if (on('pw_umask'))     L.push('  sed -i -E "s|^#?\\s*UMASK.*|UMASK\\t027|" /etc/login.defs');
+      if (on('pw_yescrypt'))  L.push('  sed -i -E "s|^#?\\s*ENCRYPT_METHOD.*|ENCRYPT_METHOD\\tYESCRYPT|" /etc/login.defs');
+      L.push('fi');
     }
-    if (fsParams.length) {
-      lines.push(``);
-      lines.push(`# Filesystem`);
-      fsParams.forEach(p => lines.push(p));
+    if (on('pw_faillock')) {
+      L.push('if [ -f /etc/security/faillock.conf ]; then');
+      L.push('  sed -i -E "s|^#?\\s*deny\\s*=.*|deny = 5|"                /etc/security/faillock.conf');
+      L.push('  sed -i -E "s|^#?\\s*unlock_time\\s*=.*|unlock_time = 900|" /etc/security/faillock.conf');
+      L.push('fi');
     }
-    if (netParams.length) {
-      lines.push(``);
-      lines.push(`# Network`);
-      netParams.forEach(p => lines.push(p));
+    if (on('pw_quality')) {
+      L.push("cat > /etc/security/pwquality.conf <<'EOF'");
+      L.push('minlen = 12');
+      L.push('minclass = 3');
+      L.push('maxrepeat = 3');
+      L.push('maxsequence = 3');
+      L.push('dictcheck = 1');
+      L.push('usercheck = 1');
+      L.push('enforce_for_root');
+      L.push('EOF');
     }
-    lines.push(`EOF`);
-    lines.push(``);
-    lines.push(`sysctl --system`);
-    lines.push(``);
+    L.push('');
   }
 
-  const hasFwRules = get('fw_ssh') || get('fw_https') || get('fw_dot') || get('fw_dccp_sctp');
-  if (get('pkg_firewalld') && hasFwRules) {
-    lines.push(`# ── Firewall Rules ──────────────────────────────────────────`);
-    lines.push(`firewall-cmd --set-default-zone=public`);
-    if (get('fw_ssh'))  lines.push(`firewall-cmd --permanent --zone=public --add-service=ssh`);
-    if (get('fw_https')) lines.push(`firewall-cmd --permanent --zone=public --add-service=https`);
-    if (get('fw_dot'))  lines.push(`firewall-cmd --permanent --zone=public --add-port=853/tcp`);
-    if (get('fw_dccp_sctp')) {
-      lines.push(`firewall-cmd --permanent --zone=public --add-rich-rule='rule protocol value="dccp" drop'`);
-      lines.push(`firewall-cmd --permanent --zone=public --add-rich-rule='rule protocol value="sctp" drop'`);
+  // core dumps
+  if (on('cd_limits') || on('cd_systemd')) {
+    L.push('step "Disable core dumps"');
+    if (on('cd_limits')) {
+      L.push("cat > /etc/security/limits.d/99-hardening.conf <<'EOF'");
+      L.push('* hard core 0');
+      L.push('* soft core 0');
+      L.push('EOF');
     }
-    lines.push(`firewall-cmd --reload`);
-    lines.push(``);
+    if (on('cd_systemd')) {
+      L.push('mkdir -p /etc/systemd/coredump.conf.d');
+      L.push("cat > /etc/systemd/coredump.conf.d/hardening.conf <<'EOF'");
+      L.push('[Coredump]');
+      L.push('Storage=none');
+      L.push('ProcessSizeMax=0');
+      L.push('EOF');
+    }
+    L.push('');
   }
 
-  if (get('dns_enable') || get('dns_dnssec')) {
-    lines.push(`# ── Encrypted DNS ───────────────────────────────────────────`);
-    lines.push(`systemctl enable --now systemd-resolved`);
-    lines.push(`ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf`);
-    lines.push(``);
-    if (get('dns_enable')) {
-      lines.push(`sed -i 's/^#\\?DNS=.*/DNS=1.1.1.1/' /etc/systemd/resolved.conf || true`);
-      lines.push(`sed -i 's/^#\\?FallbackDNS=.*/FallbackDNS=9.9.9.9/' /etc/systemd/resolved.conf || true`);
-      lines.push(`sed -i 's/^#\\?DNSOverTLS=.*/DNSOverTLS=yes/' /etc/systemd/resolved.conf || true`);
+  // auditd
+  if (on('ad_install') || on('ad_rules')) {
+    L.push('step "auditd"');
+    L.push('$PKG_I audit 2>/dev/null || $PKG_I auditd 2>/dev/null || true');
+    if (on('ad_rules')) {
+      L.push("cat > /etc/audit/rules.d/hardening.rules <<'EOF'");
+      L.push('-D');
+      L.push('-b 8192');
+      L.push('-f 1');
+      L.push('-w /etc/passwd  -p wa -k identity');
+      L.push('-w /etc/shadow  -p wa -k identity');
+      L.push('-w /etc/group   -p wa -k identity');
+      L.push('-w /etc/sudoers -p wa -k sudoers');
+      L.push('-w /etc/sudoers.d/ -p wa -k sudoers');
+      L.push('-w /etc/ssh/sshd_config -p wa -k sshd');
+      L.push('-a always,exit -F arch=b64 -S init_module,delete_module,finit_module -k modules');
+      L.push('EOF');
+      L.push('augenrules --load 2>/dev/null || true');
     }
-    if (get('dns_dnssec')) {
-      lines.push(`sed -i 's/^#\\?DNSSEC=.*/DNSSEC=yes/' /etc/systemd/resolved.conf || true`);
-    }
-    lines.push(``);
-    lines.push(`systemctl restart systemd-resolved`);
-    lines.push(`resolvectl flush-caches`);
-    lines.push(``);
+    L.push('systemctl enable --now auditd 2>/dev/null || true');
+    L.push('');
   }
 
-  if ((get('aa_avahi') || get('aa_dnsmasq')) && get('pkg_apparmor')) {
-    lines.push(`# ── AppArmor Profile Enforcement ────────────────────────────`);
-    if (get('aa_avahi')) {
-      lines.push(`[ -f /etc/apparmor.d/usr.sbin.avahi-daemon ] && aa-enforce /etc/apparmor.d/usr.sbin.avahi-daemon`);
+  // fail2ban
+  if (on('fb_install') || on('fb_sshd')) {
+    L.push('step "fail2ban"');
+    L.push('$PKG_I fail2ban 2>/dev/null || true');
+    if (on('fb_sshd')) {
+      L.push('mkdir -p /etc/fail2ban/jail.d');
+      L.push("cat > /etc/fail2ban/jail.d/hardening.local <<'EOF'");
+      L.push('[DEFAULT]');
+      L.push('bantime  = 1h');
+      L.push('findtime = 10m');
+      L.push('maxretry = 5');
+      L.push('[sshd]');
+      L.push('enabled = true');
+      L.push('EOF');
     }
-    if (get('aa_dnsmasq')) {
-      lines.push(`[ -f /etc/apparmor.d/usr.sbin.dnsmasq ] && aa-enforce /etc/apparmor.d/usr.sbin.dnsmasq`);
-    }
-    lines.push(``);
+    L.push('systemctl enable --now fail2ban 2>/dev/null || true');
+    L.push('');
   }
 
-  lines.push(`echo ""`);
-  lines.push(`echo "✓ Hardening complete. A reboot is recommended."`);
+  // updates
+  if (on('up_auto')) {
+    L.push('step "Automatic updates"');
+    L.push('case "$FAM" in');
+    L.push('  debian) $PKG_I unattended-upgrades apt-listchanges; dpkg-reconfigure -f noninteractive unattended-upgrades 2>/dev/null || true ;;');
+    L.push('  rhel)   $PKG_I dnf-automatic; systemctl enable --now dnf-automatic.timer ;;');
+    L.push('  arch)   $PKG_I pacman-contrib; systemctl enable --now paccache.timer ;;');
+    L.push('esac');
+    L.push('');
+  }
 
-  return lines.join('\n');
+  // usbguard
+  if (on('ug_install')) {
+    L.push('step "USBGuard"');
+    L.push('$PKG_I usbguard 2>/dev/null || true');
+    L.push('[ -s /etc/usbguard/rules.conf ] || usbguard generate-policy > /etc/usbguard/rules.conf 2>/dev/null || true');
+    L.push('chmod 0600 /etc/usbguard/rules.conf 2>/dev/null || true');
+    L.push('systemctl enable --now usbguard 2>/dev/null || true');
+    L.push('echo "REVIEW /etc/usbguard/rules.conf BEFORE REBOOT"');
+    L.push('');
+  }
+
+  // banner
+  if (on('bn_issue')) {
+    L.push('step "Legal banner"');
+    L.push('msg="Authorized use only. All activity may be monitored and reported."');
+    L.push('printf "%s\\n" "$msg" > /etc/issue');
+    L.push('printf "%s\\n" "$msg" > /etc/issue.net');
+    L.push('printf "%s\\n" "$msg" > /etc/motd');
+    L.push('');
+  }
+
+  // accounting
+  if (on('pa_install')) {
+    L.push('step "Process accounting"');
+    L.push('$PKG_I acct 2>/dev/null || $PKG_I psacct 2>/dev/null || true');
+    L.push('systemctl enable --now acct 2>/dev/null || systemctl enable --now psacct 2>/dev/null || true');
+    L.push('');
+  }
+
+  // aide
+  if (on('ai_install')) {
+    L.push('step "AIDE"');
+    L.push('$PKG_I aide 2>/dev/null || true');
+    L.push('if [ ! -f /var/lib/aide/aide.db.gz ]; then');
+    L.push('  aideinit 2>/dev/null || aide --init');
+    L.push('  [ -f /var/lib/aide/aide.db.new.gz ] && mv /var/lib/aide/aide.db.new.gz /var/lib/aide/aide.db.gz');
+    L.push('fi');
+    L.push('');
+  }
+
+  L.push('ok "Hardening complete. A reboot is recommended."');
+  return L.join('\n');
 }
 
-function syntaxHighlight(code) {
-  return code
-    .replace(/^(#.*)/gm, '<span class="c-comment">$1</span>')
-    .replace(/\b(if|then|else|elif|fi|for|do|done|while|case|esac|in)\b/g, '<span class="c-keyword">$1</span>')
-    .replace(/\b(systemctl|sed|cat|echo|ln|sysctl|firewall-cmd|pacman|apt-get|aa-enforce|resolvectl|command)\b/g, '<span class="c-cmd">$1</span>')
-    .replace(/'([^']+)'/g, '<span class="c-str">\'$1\'</span>')
-    .replace(/\$\{?[\w@#?*!0-9]+\}?/g, '<span class="c-var">$&</span>')
-    .replace(/^(# ──.*)/gm, '<span class="c-section">$1</span>');
+/* =====================================================================
+   Highlighting (robust vs innerHTML)
+   ===================================================================== */
+function escapeHtml(s) {
+  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+function highlight(code) {
+  return escapeHtml(code)
+    .replace(/^(# ──.*)$/gm, '<span class="c-sec">$1</span>')
+    .replace(/^(#.*)$/gm, '<span class="c-cm">$1</span>')
+    .replace(/(&#39;|&quot;|')([^'\n]*)(&#39;|&quot;|')/g, '<span class="c-st">$1$2$3</span>')
+    .replace(/\b(if|then|else|elif|fi|for|do|done|while|case|esac|in|function)\b/g, '<span class="c-kw">$1</span>')
+    .replace(/\b(systemctl|sed|cat|echo|ln|sysctl|firewall-cmd|pacman|apt-get|dnf|aa-enforce|resolvectl|printf|command|install|mkdir|chmod|mv|augenrules|dpkg-reconfigure|aideinit|usbguard)\b/g, '<span class="c-cmd">$1</span>')
+    .replace(/\$\{?[A-Z_][A-Z0-9_@]*\}?/g, '<span class="c-vr">$&</span>');
 }
 
-function countFeatures() {
-  const ids = ['pkg_firewalld','pkg_apparmor','k_kptr','k_dmesg','k_aslr','k_bpf','k_ptrace','k_sysrq',
-    'fs_links','fs_fifos','fs_coredump','net_redirects','net_source_route','net_syncookies',
-    'net_rp_filter','net_icmp_bcast','net_ipv6','fw_ssh','fw_https','fw_dot','fw_dccp_sctp',
-    'dns_enable','dns_dnssec','aa_avahi','aa_dnsmasq'];
-  const total = ids.length;
-  const enabled = ids.filter(id => get(id)).length;
-  return { enabled, total };
+/* =====================================================================
+   Stats + render
+   ===================================================================== */
+function updateCounters() {
+  document.querySelectorAll('.section').forEach(sec => {
+    const ids = SECTIONS.find(s=>s.id===sec.dataset.sid).opts.map(o=>o[0]);
+    const enabled = ids.filter(id => state[id]).length;
+    sec.querySelector('[data-on]').textContent = enabled;
+  });
 }
 
 function render() {
+  updateCounters();
   const script = generateScript();
-  const el = document.getElementById('outputCode');
-  el.innerHTML = syntaxHighlight(script);
-
+  $('code').innerHTML = highlight(script);
+  const totalFlags = Object.keys(state).length;
+  const onFlags = Object.values(state).filter(Boolean).length;
   const lines = script.split('\n').length;
-  document.getElementById('lineCount').textContent = lines;
-
-  const { enabled, total } = countFeatures();
-  document.getElementById('featureCount').textContent = enabled + '/' + total;
-
-  const score = Math.round((enabled / total) * 100);
-  const scoreEl = document.getElementById('scoreNum');
-  scoreEl.textContent = score;
-  scoreEl.style.color = score >= 80 ? 'var(--accent)' : score >= 50 ? 'var(--warn)' : 'var(--danger)';
+  const bytes = new Blob([script]).size;
+  $('sLines').textContent = lines;
+  $('sFeat').textContent = `${onFlags} / ${totalFlags}`;
+  $('sSize').textContent = (bytes < 1024 ? `${bytes} B` : `${(bytes/1024).toFixed(1)} KB`);
+  const score = Math.round(100 * onFlags / totalFlags);
+  $('sScore').textContent = score;
+  $('sBar').style.width = score + '%';
+  const c = score >= 80 ? 'var(--accent)' : score >= 50 ? 'var(--warn)' : 'var(--danger)';
+  $('sScore').style.color = c;
+  $('sScore').style.textShadow = `0 0 10px color-mix(in oklab, ${c} 45%, transparent)`;
 }
 
-function copyScript() {
-  const script = generateScript();
-  navigator.clipboard.writeText(script).then(() => showToast('✓ Copied to clipboard'));
+/* =====================================================================
+   Presets, search, bulk, copy/dl, theme, import/export
+   ===================================================================== */
+function applyProfile(name) {
+  const set = PROFILES[name];
+  for (const id of Object.keys(state)) state[id] = set.has(id);
+  document.querySelectorAll('.row').forEach(r => r.classList.toggle('on', !!state[r.dataset.oid]));
+  document.querySelectorAll('.preset').forEach(b => b.classList.toggle('active', b.dataset.profile===name));
+  render();
+}
+$('presets').addEventListener('click', e => {
+  const b = e.target.closest('.preset'); if (!b) return;
+  applyProfile(b.dataset.profile);
+});
+
+$('search').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase().trim();
+  document.querySelectorAll('.row').forEach(r => {
+    const oid = r.dataset.oid;
+    const text = (r.querySelector('.name').textContent + ' ' + r.querySelector('.desc').textContent + ' ' + oid).toLowerCase();
+    r.hidden = q && !text.includes(q);
+  });
+  document.querySelectorAll('.section').forEach(sec => {
+    const allHidden = [...sec.querySelectorAll('.row')].every(r => r.hidden);
+    sec.style.display = allHidden ? 'none' : '';
+  });
+});
+
+$('selAll').addEventListener('click', () => { for (const k of Object.keys(state)) state[k] = true; document.querySelectorAll('.row').forEach(r => r.classList.add('on')); document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active')); render(); });
+$('selNone').addEventListener('click', () => { for (const k of Object.keys(state)) state[k] = false; document.querySelectorAll('.row').forEach(r => r.classList.remove('on')); document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active')); render(); });
+
+function showToast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-function downloadScript() {
-  const script = generateScript();
-  const blob = new Blob([script], { type: 'text/x-sh' });
+$('btnCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(generateScript()); showToast('✓ copied to clipboard'); }
+  catch { showToast('⚠ clipboard blocked'); }
+});
+$('btnDl').addEventListener('click', () => {
+  const blob = new Blob([generateScript()], { type: 'text/x-sh' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'harden.sh';
   a.click();
+  URL.revokeObjectURL(a.href);
   showToast('✓ harden.sh downloaded');
-}
+});
 
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
-}
+$('exportCfg').addEventListener('click', () => {
+  const cfg = JSON.stringify(state, null, 2);
+  const blob = new Blob([cfg], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'harden-config.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('✓ config exported');
+});
+$('importCfg').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const cfg = JSON.parse(await f.text());
+    for (const [k,v] of Object.entries(cfg)) if (k in state) state[k] = !!v;
+    document.querySelectorAll('.row').forEach(r => r.classList.toggle('on', !!state[r.dataset.oid]));
+    document.querySelectorAll('.preset').forEach(b=>b.classList.remove('active'));
+    render(); showToast('✓ config imported');
+  } catch { showToast('✗ invalid JSON'); }
+});
 
-// Sync toggle row state on checkbox click (when clicking the toggle directly)
-document.querySelectorAll('.toggle input').forEach(cb => {
-  cb.addEventListener('click', e => {
-    e.stopPropagation();
-    const row = cb.closest('.toggle-row');
-    row.classList.toggle('active', cb.checked);
-    render();
+const themeSaved = localStorage.getItem('lh-theme') || 'cyber';
+document.documentElement.dataset.theme = themeSaved;
+$('themeSwitch').querySelectorAll('button').forEach(b => {
+  if (b.dataset.theme === themeSaved) b.classList.add('active');
+  b.addEventListener('click', () => {
+    document.documentElement.dataset.theme = b.dataset.theme;
+    localStorage.setItem('lh-theme', b.dataset.theme);
+    $('themeSwitch').querySelectorAll('button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
   });
 });
 
-render();
+/* Keyboard shortcuts */
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey||e.metaKey) && e.key === 'f') { e.preventDefault(); $('search').focus(); }
+  if ((e.ctrlKey||e.metaKey) && e.key === 's') { e.preventDefault(); $('btnDl').click(); }
+  if ((e.ctrlKey||e.metaKey) && e.key === 'c' && e.shiftKey) { e.preventDefault(); $('btnCopy').click(); }
+});
+
+/* init */
+buildUI();
+applyProfile('balanced');
 </script>
 </body>
 </html>

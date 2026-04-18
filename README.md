@@ -1,187 +1,184 @@
-Linux Hardening Script (AppArmor + Firewalld)
+# linux-hardening
 
-This is a small, opinionated Linux hardening script for people who want real security improvements without turning their system into an unusable science experiment.
+A hardening script for Linux that actually gets used, because nobody wants to
+read a 400-line STIG checklist at 2am.
 
-It focuses on:
-- Kernel hardening
-- Network hardening
-- Mandatory access control
-- Secure DNS
-- Reasonable defaults
+Point it at an Arch, Debian/Ubuntu, or Fedora box. It makes the kernel pickier,
+the network quieter, SSH stricter, DNS encrypted, and AppArmor actually enforce.
+You can dry-run everything first, every change gets backed up, and if you hate
+the result you can roll the whole thing back with one command.
 
-No CIS checkbox chasing. No distro lock-in. No magic.
+There's also a browser-based builder — `hardening-gui.html` — that lets you
+tick what you want and spits out a custom script.
 
---------------------------------------------------
+---
 
-Why this exists
+## Try it in 30 seconds
 
-Most Linux systems ship functional, not secure.
+```sh
+git clone https://github.com/mokosak/linux-hardening
+cd linux-hardening
 
-This script applies a set of changes that:
-- Reduce information leaks
-- Shrink attack surface
-- Make exploitation harder
-- Add meaningful containment if something does get compromised
+# see what it *would* do, no changes:
+./harden.sh --dry-run
 
-Everything here is stuff you’d likely end up doing manually anyway if you hardened systems long enough.
+# audit the current state of your system:
+./harden.sh --check
 
---------------------------------------------------
-
-What systems this works on
-
-The script automatically detects the distro family.
-
-Debian / Ubuntu systems use apt.
-Arch Linux systems use pacman.
-
-If neither is detected, the script exits without making changes.
-
-No guessing. No partial installs.
-
---------------------------------------------------
-
-How privileges are handled
-
-The script does not assume root access.
-
-If you run it as a normal user:
-- It asks for sudo once at startup
-- If sudo fails or is unavailable, execution stops
-- After elevation, the script re-execs itself as root
-
-This avoids half-applied configurations and silent failures.
-
---------------------------------------------------
-
-What the script actually does
-
-Mandatory access control (AppArmor)
-
-AppArmor is installed, enabled at boot, and enforced.
-
-If profiles for common services such as avahi-daemon or dnsmasq exist, they are explicitly switched into enforce mode.
-
-Why this matters:
-Even if a service is exploited, AppArmor limits what it can access.
-You get containment instead of full system compromise.
-
-This is one of the highest-value security controls on Linux and is often left unused.
-
---------------------------------------------------
-
-Kernel hardening (sysctl)
-
-A hardened sysctl profile is written to /etc/sysctl.d/99-hardening.conf and applied immediately.
-
-It covers three main areas.
-
-Kernel self-protection:
-- Hides kernel pointers
-- Restricts access to dmesg
-- Enables full ASLR
-- Disables unprivileged BPF
-- Disables magic SysRq
-
-This reduces information leaks and limits kernel abuse by local attackers.
-
-Process and filesystem safety:
-- Blocks hardlink and symlink attacks
-- Protects FIFOs and regular files
-- Disables SUID core dumps
-- Restricts ptrace between processes
-
-This shuts down a large class of local privilege escalation techniques.
-
-Network stack hardening:
-- Disables ICMP redirects and source routing
-- Enables TCP SYN cookies
-- Enables reverse path filtering
-- Filters bogus ICMP responses
-- Applies sane IPv6 defaults
-
-These settings make common network attacks significantly harder.
-
---------------------------------------------------
-
-Firewall configuration (Firewalld)
-
-Firewalld is installed, enabled, and configured with a default-deny posture.
-
-Allowed traffic:
-- SSH
-- HTTPS
-- DNS-over-TLS (TCP port 853)
-
-Explicitly blocked protocols:
-- DCCP
-- SCTP
-
-These protocols are rarely needed on general-purpose systems and only increase attack surface.
-
-All rules are permanent and survive reboots.
-
---------------------------------------------------
-
-DNS security
-
-The script enables and configures systemd-resolved with:
-- DNS-over-TLS
-- DNSSEC validation
-- Explicit trusted resolvers
-- Secure fallback resolvers
-
-It also locks /etc/resolv.conf to the systemd stub to prevent other software from silently replacing it.
-
-Why this matters:
-It prevents DNS spoofing and downgrade attacks, and stops random software from hijacking name resolution.
-
---------------------------------------------------
-
-What this script intentionally does not do
-
-This script does not:
-- Modify the bootloader
-- Change kernel command line parameters
-- Disable IPv6
-- Alter SSH configuration or ports
-- Remove services automatically
-- Attempt CIS, STIG, or government compliance
-
-Those decisions are environment-specific and should be made consciously.
-
---------------------------------------------------
-
-Is this safe to run?
-
-On most desktops, laptops, and light servers, yes.
-
-That said:
-Read the script.
-Understand what it changes.
-Do not run it blindly on systems you do not control.
-
-Security always involves trade-offs.
-
---------------------------------------------------
-
-Recommended next steps (optional)
-
-If you want to go further:
-- Enable AppArmor at boot via kernel parameters
-- Increase kernel.yama.ptrace_scope on non-development systems
-- Mask unused services such as avahi, cups, or rpcbind
-- Add SSH rate limiting via firewalld
-- Deploy auditd for syscall auditing
-- Combine with disk encryption and secure boot
-
-This script is a foundation, not the finish line.
-
---------------------------------------------------
-
-CREDITS
-
-Most of this documentation was possible by reading a well done privacy guide explaining sysctl and boot parameters.
-
+# when you're ready:
+sudo ./harden.sh
 ```
-https://theprivacyguide1.github.io/linux_hardening_guide#sysctl
+
+That's it. Default profile is `balanced`, which is sane for laptops, desktops,
+and most servers.
+
+---
+
+## Three profiles, pick one
+
+**`minimal`** — the classics. Kernel sysctl, firewall, AppArmor, encrypted DNS.
+Nothing that's going to break your workflow.
+
+**`balanced`** *(default)* — minimal, plus SSH hardening, password policy,
+auditd, module blacklist, a legal banner, and automatic security updates.
+This is the one you probably want.
+
+**`paranoid`** — everything above, plus fail2ban, USBGuard, AIDE file
+integrity, and process accounting. Great for servers. Annoying on a laptop
+that you plug random USB devices into.
+
+```sh
+sudo ./harden.sh --profile paranoid -y
 ```
+
+You can also cherry-pick:
+
+```sh
+sudo ./harden.sh --only firewall,dns,ssh
+sudo ./harden.sh --skip usbguard,aide
+./harden.sh --list          # show every section name
+```
+
+---
+
+## What actually gets touched
+
+| area       | what happens |
+|------------|--------------|
+| **kernel** | kptr_restrict, dmesg_restrict, ASLR, ptrace_scope, SysRq off, BPF locked down, kexec disabled, and a few dozen more knobs in `/etc/sysctl.d/99-hardening.conf` |
+| **network** | SYN cookies, rp_filter, no ICMP redirects, no source routing, IPv6 hardened instead of disabled, forwarding off, martians logged |
+| **modules** | obsolete protocols (dccp, sctp, rds, tipc, decnet…), obscure filesystems (cramfs, hfs, udf…), and firewire/thunderbolt all blacklisted |
+| **firewall** | firewalld with default-deny, SSH rate-limited to 3/min, DCCP/SCTP dropped, only SSH/HTTPS/DoT allowed out of the box |
+| **dns** | systemd-resolved with DNS-over-TLS (Cloudflare + Quad9 fallback) and DNSSEC |
+| **apparmor** | enforce profiles for avahi, dnsmasq, cups-browsed, firefox, thunderbird when present |
+| **ssh** | key-only, no root, modern crypto suites, short timeouts, pre-auth banner, dropped into `sshd_config.d/` so it doesn't fight with distro defaults |
+| **login** | `login.defs`, `pwquality` (12+ chars, 3 classes, dict check), `faillock` lockout, yescrypt hashing |
+| **dumps** | core dumps off everywhere: ulimit, setuid, systemd-coredump |
+| **auditd** | baseline rules for identity files, sudoers, sshd config, module loading |
+| **updates** | unattended-upgrades / dnf-automatic / paccache on the right distro |
+| **extras** | legal banner, fail2ban, USBGuard, AIDE, process accounting (paranoid only) |
+
+Every section is a function in the script. Open it up, read it, disable what
+you don't want. No magic.
+
+---
+
+## It won't break your machine (probably)
+
+A few things are worth calling out:
+
+- **Every file it edits gets backed up** to
+  `/var/backups/linux-hardening/<timestamp>/`. Nothing is overwritten without a
+  copy saved first.
+
+- **`--dry-run` shows you exactly what would happen.** Prefix every command
+  with `[dry-run]` and no files touched. Run this before the real thing.
+
+- **Rollback is one command:**
+
+  ```sh
+  sudo ./harden.sh --revert /var/backups/linux-hardening/20260418-214032
+  ```
+
+- **It's idempotent.** Run it ten times, nothing changes after the first. If
+  files already match, they're left alone.
+
+- **`--check` is read-only.** Runs through every setting and prints a
+  pass/fail table. Useful for auditing machines you haven't hardened yet, or
+  verifying the script did what it claimed.
+
+- Everything gets logged to `/var/log/linux-hardening.log`.
+
+---
+
+## Things it deliberately won't do
+
+- **Touch the bootloader or kernel command line.** Those decisions depend on
+  your hardware and what you boot with. Add kernel params yourself.
+- **Disable IPv6.** It's 2026. The script hardens IPv6 instead of pretending
+  it doesn't exist.
+- **Change your SSH port** or pretend that's real security.
+- **Chase CIS / STIG / FedRAMP compliance.** Those are political artifacts,
+  not security.
+- **Reconfigure your users.** Passwords, shells, groups — your call.
+
+---
+
+## The web UI
+
+Open `hardening-gui.html` in any browser. No build step, no server, no
+dependencies. It's one file.
+
+You get:
+
+- **Three presets** (minimal/balanced/paranoid) as one-click buttons
+- **Search** across every option — type "ssh" or "dns" or "ipv6"
+- **Four themes** if you care about that sort of thing (cyber, synthwave,
+  matrix, nord)
+- **Live script preview** — syntax-highlighted bash that updates as you toggle
+- **Stats** — line count, byte size, "hardness score"
+- **Import/export** your toggle state as JSON so you can reuse configs across
+  machines
+- **Keyboard shortcuts**: `Ctrl+F` to search, `Ctrl+S` to download,
+  `Ctrl+Shift+C` to copy
+
+Hit **Download**, scp it to the box, run it as root.
+
+---
+
+## Under the hood
+
+The script is one bash file. It's ~700 lines but most of that is the sysctl,
+SSH, and auditd config blobs being emitted verbatim. The actual logic is small:
+
+- distro detection (`pacman` / `apt-get` / `dnf`)
+- a `run` wrapper that either executes or prints (dry-run)
+- a `write_file` helper that backs up before writing and skips unchanged files
+- one function per section, called from `main` based on the profile
+
+If you want to add a section, grep for `section_banner` and copy the pattern.
+
+---
+
+## Why this exists
+
+Most Linux distros ship functional, not secure. The defaults assume you're on
+a trusted network running trusted software, and half the useful security
+machinery (AppArmor, sysctl, auditd, faillock) is installed but not really
+turned on.
+
+This script does the things you'd end up doing by hand anyway if you hardened
+enough systems — nothing exotic, nothing bleeding-edge. The goal is a box
+that's meaningfully harder to exploit and mostly indistinguishable from
+normal for the user.
+
+Opinionated defaults. Read before running. Ship it.
+
+---
+
+## Credits
+
+Sysctl recommendations cribbed from
+[theprivacyguide1.github.io/linux_hardening_guide](https://theprivacyguide1.github.io/linux_hardening_guide)
+and the kernel self-protection project. Everything else is just years of
+running `diff /etc/` against fresh installs.
