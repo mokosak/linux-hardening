@@ -457,7 +457,8 @@ const SECTIONS = [
   {
     id: 'packages', title: 'Package Installation', icon: '📦', badge: ['b-crit','CRIT'],
     opts: [
-      ['pkg_firewalld', true,  'Install firewalld',           'Dynamic firewall daemon managing nftables at runtime.',          'firewall'],
+      ['pkg_nftables',  true,  'Install nftables',            'Native nft firewall rules, no extra firewall daemon.',           'firewall'],
+      ['pkg_firewalld', false, 'Install firewalld',           'Alternative dynamic firewall daemon managing nftables.',         'firewall'],
       ['pkg_apparmor',  true,  'Install AppArmor',            'Mandatory access control via per-program profiles.',             'mac'],
     ],
   },
@@ -512,7 +513,7 @@ const SECTIONS = [
   {
     id: 'firewall', title: 'Firewall Rules', icon: '🔥', badge: ['b-high','HIGH'],
     opts: [
-      ['fw_default_deny', true,  'Default-deny inbound', 'Set zone target to DROP; only explicitly allowed traffic passes.',   'policy'],
+      ['fw_default_deny', true,  'Default-deny inbound', 'Drop inbound traffic unless explicitly allowed.',                    'policy'],
       ['fw_ssh',          true,  'Allow SSH (22/tcp)',   'Permit inbound SSH. Disable if you only connect out.',               'ssh'],
       ['fw_https',        true,  'Allow HTTPS (443/tcp)','Permit inbound HTTPS. Leave on for web servers only.',               'https'],
       ['fw_dot',          true,  'Allow DoT (853/tcp)',  'Required for outbound encrypted DNS.',                                'dns'],
@@ -575,7 +576,7 @@ const SECTIONS = [
   {
     id: 'fail2ban', title: 'Fail2ban', icon: '🚫', badge: ['b-med','MED'],
     opts: [
-      ['fb_install', false, 'Install fail2ban',             'IP-based rate-limiting on top of firewalld.',                   'service'],
+      ['fb_install', false, 'Install fail2ban',             'IP-based rate-limiting on top of the firewall.',                'service'],
       ['fb_sshd',    false, 'Ban sshd bruteforce',          '5 failures / 10 min → 1 hour ban.',                             'brute'],
     ],
   },
@@ -612,13 +613,13 @@ const SECTIONS = [
 ];
 
 const PROFILES = {
-  minimal:  new Set(['pkg_firewalld','pkg_apparmor','k_kptr','k_dmesg','k_aslr','k_bpf','k_ptrace','k_sysrq',
+  minimal:  new Set(['pkg_nftables','pkg_apparmor','k_kptr','k_dmesg','k_aslr','k_bpf','k_ptrace','k_sysrq',
                      'fs_links','fs_fifos','fs_coredump',
                      'net_redirects','net_syncookies','net_rp_filter','net_icmp_bcast','net_ipv6',
                      'fw_ssh','fw_https','fw_dot','fw_dccp_sctp',
                      'dns_dot','dns_dnssec',
                      'aa_avahi','aa_dnsmasq']),
-  balanced: new Set(['pkg_firewalld','pkg_apparmor',
+  balanced: new Set(['pkg_nftables','pkg_apparmor',
                      'k_kptr','k_dmesg','k_printk','k_kexec','k_aslr','k_bpf','k_ptrace','k_sysrq','k_perf','k_tty',
                      'fs_links','fs_fifos','fs_coredump',
                      'net_redirects','net_source_route','net_syncookies','net_rfc1337','net_rp_filter','net_martians','net_icmp_bcast','net_forward','net_timestamps','net_ipv6',
@@ -630,7 +631,7 @@ const PROFILES = {
                      'pw_aging','pw_umask','pw_yescrypt','pw_quality','pw_faillock',
                      'cd_limits','cd_systemd',
                      'ad_install','ad_rules',
-                     'up_auto',
+                     'up_auto','ug_install',
                      'bn_issue']),
   paranoid: /* populated below — everything */ null,
 };
@@ -722,15 +723,17 @@ function generateScript() {
   L.push('');
 
   // Packages
-  if (on('pkg_firewalld') || on('pkg_apparmor')) {
+  if (on('pkg_nftables') || on('pkg_firewalld') || on('pkg_apparmor')) {
     L.push('step "Packages"');
     L.push('$PKG_R');
     const pacman = [], apt = [], dnf = [];
+    if (on('pkg_nftables'))  { pacman.push('nftables');  apt.push('nftables');  dnf.push('nftables'); }
     if (on('pkg_firewalld')) { pacman.push('firewalld'); apt.push('firewalld'); dnf.push('firewalld'); }
     if (on('pkg_apparmor'))  { pacman.push('apparmor');  apt.push('apparmor apparmor-utils apparmor-profiles'); }
     L.push(`[ "$FAM" = arch ]   && $PKG_I ${pacman.join(' ')}`);
     L.push(`[ "$FAM" = debian ] && $PKG_I ${apt.join(' ')}`);
-    if (on('pkg_firewalld')) L.push(`[ "$FAM" = rhel ]   && $PKG_I ${dnf.join(' ')}`);
+    if (dnf.length) L.push(`[ "$FAM" = rhel ]   && $PKG_I ${dnf.join(' ')}`);
+    if (on('pkg_nftables'))  L.push('systemctl enable --now nftables || true');
     if (on('pkg_firewalld')) L.push('systemctl enable --now firewalld || true');
     if (on('pkg_apparmor'))  L.push('[ "$FAM" != rhel ] && systemctl enable --now apparmor || true');
     L.push('');
@@ -798,14 +801,14 @@ function generateScript() {
     ['# Obsolete filesystems','cramfs','freevxfs','jffs2','hfs','hfsplus','squashfs','udf']
   );
   if (on('mod_firewire')) modBlocks.push(
-    ['# DMA-capable buses','firewire-core','thunderbolt']
+    ['# DMA-capable buses','firewire-core','firewire-ohci','firewire-sbp2','thunderbolt']
   );
   if (on('mod_usb_storage')) modBlocks.push(
     ['# USB mass-storage (aggressive!)','usb-storage']
   );
   if (modBlocks.length) {
     L.push('step "Kernel module blacklist"');
-    L.push("cat > /etc/modprobe.d/hardening.conf <<'EOF'");
+    L.push("cat > /etc/modprobe.d/99-hardening.conf <<'EOF'");
     modBlocks.forEach(blk => {
       L.push(blk[0]);
       blk.slice(1).forEach(m => L.push(`install ${m} /bin/false`));
@@ -817,7 +820,42 @@ function generateScript() {
 
   // firewall
   const hasFw = ['fw_default_deny','fw_ssh','fw_https','fw_dot','fw_dccp_sctp','fw_ratelimit_ssh'].some(on);
-  if (on('pkg_firewalld') && hasFw) {
+  if (on('pkg_nftables') && hasFw) {
+    L.push('step "nftables rules"');
+    L.push("cat > /etc/nftables.conf <<'EOF'");
+    L.push('#!/usr/sbin/nft -f');
+    L.push('flush ruleset');
+    L.push('');
+    L.push('table inet filter {');
+    L.push('  chain input {');
+    L.push(`    type filter hook input priority filter; policy ${on('fw_default_deny') ? 'drop' : 'accept'};`);
+    L.push('    ct state invalid drop');
+    L.push('    ct state established,related accept');
+    L.push('    iifname "lo" accept');
+    L.push('    udp sport 67 udp dport 68 accept');
+    L.push('    udp sport 547 udp dport 546 accept');
+    L.push('    meta l4proto icmp accept');
+    L.push('    meta l4proto ipv6-icmp accept');
+    if (on('fw_ssh') && on('fw_ratelimit_ssh')) L.push('    tcp dport 22 ct state new limit rate 3/minute accept');
+    else if (on('fw_ssh'))                      L.push('    tcp dport 22 accept');
+    if (on('fw_https')) L.push('    tcp dport 443 accept');
+    if (on('fw_dot'))   L.push('    tcp dport 853 accept');
+    L.push('  }');
+    L.push('');
+    L.push('  chain forward {');
+    L.push('    type filter hook forward priority filter; policy drop;');
+    L.push('  }');
+    L.push('');
+    L.push('  chain output {');
+    L.push('    type filter hook output priority filter; policy accept;');
+    if (on('fw_dccp_sctp')) L.push('    meta l4proto { dccp, sctp } drop');
+    L.push('  }');
+    L.push('}');
+    L.push('EOF');
+    L.push('nft -f /etc/nftables.conf');
+    L.push('systemctl enable --now nftables || true');
+    L.push('');
+  } else if (on('pkg_firewalld') && hasFw) {
     L.push('step "firewalld rules"');
     L.push('firewall-cmd --set-default-zone=public >/dev/null');
     if (on('fw_default_deny')) L.push('firewall-cmd --permanent --zone=public --set-target=DROP >/dev/null || true');
@@ -951,18 +989,44 @@ function generateScript() {
     L.push('step "auditd"');
     L.push('$PKG_I audit 2>/dev/null || $PKG_I auditd 2>/dev/null || true');
     if (on('ad_rules')) {
-      L.push("cat > /etc/audit/rules.d/hardening.rules <<'EOF'");
+      L.push("cat > /etc/audit/rules.d/99-hardening.rules <<'EOF'");
       L.push('-D');
       L.push('-b 8192');
       L.push('-f 1');
       L.push('-w /etc/passwd  -p wa -k identity');
       L.push('-w /etc/shadow  -p wa -k identity');
       L.push('-w /etc/group   -p wa -k identity');
+      L.push('-w /etc/gshadow -p wa -k identity');
       L.push('-w /etc/sudoers -p wa -k sudoers');
       L.push('-w /etc/sudoers.d/ -p wa -k sudoers');
-      L.push('-w /etc/ssh/sshd_config -p wa -k sshd');
+      L.push('-w /sbin/insmod   -p x -k modules');
+      L.push('-w /sbin/rmmod    -p x -k modules');
+      L.push('-w /sbin/modprobe -p x -k modules');
+      L.push('-w /usr/bin/sudo  -p x -k privileged');
+      L.push('-w /usr/bin/su    -p x -k privileged');
+      L.push('-w /usr/bin/pkexec -p x -k privileged');
       L.push('-a always,exit -F arch=b64 -S init_module,delete_module,finit_module -k modules');
       L.push('EOF');
+      L.push('watch() { [ -e "$1" ] && printf -- "-w %s -p %s -k %s\\n" "$1" "$2" "$3" >> /etc/audit/rules.d/99-hardening.rules; }');
+      L.push('watch /etc/localtime wa time');
+      L.push('watch /etc/hosts wa network');
+      L.push('watch /etc/resolv.conf wa network');
+      L.push('watch /etc/ssh/sshd_config wa sshd');
+      L.push('watch /etc/ssh/sshd_config.d/ wa sshd');
+      L.push('watch /boot/ wa boot');
+      L.push('watch /etc/kernel/cmdline wa boot');
+      L.push('watch /etc/mkinitcpio.conf wa boot');
+      L.push('watch /etc/mkinitcpio.d/ wa boot');
+      L.push('watch /usr/share/secureboot/ wa secureboot');
+      L.push('watch /var/lib/sbctl/ wa secureboot');
+      L.push('watch /etc/crypttab wa luks');
+      L.push('watch /etc/nftables.conf wa firewall');
+      L.push('watch /etc/firewalld/ wa firewall');
+      L.push('watch /etc/usbguard/ wa usbguard');
+      L.push('watch /etc/apparmor.d/ wa apparmor');
+      L.push('watch /etc/modprobe.d/ wa modules');
+      L.push('watch /etc/systemd/ wa systemd');
+      L.push('watch /usr/lib/systemd/system/ wa systemd');
       L.push('augenrules --load 2>/dev/null || true');
     }
     L.push('systemctl enable --now auditd 2>/dev/null || true');
@@ -1055,7 +1119,7 @@ function highlight(code) {
     .replace(/^(#.*)$/gm, '<span class="c-cm">$1</span>')
     .replace(/(&#39;|&quot;|')([^'\n]*)(&#39;|&quot;|')/g, '<span class="c-st">$1$2$3</span>')
     .replace(/\b(if|then|else|elif|fi|for|do|done|while|case|esac|in|function)\b/g, '<span class="c-kw">$1</span>')
-    .replace(/\b(systemctl|sed|cat|echo|ln|sysctl|firewall-cmd|pacman|apt-get|dnf|aa-enforce|resolvectl|printf|command|install|mkdir|chmod|mv|augenrules|dpkg-reconfigure|aideinit|usbguard)\b/g, '<span class="c-cmd">$1</span>')
+    .replace(/\b(systemctl|sed|cat|echo|ln|sysctl|nft|firewall-cmd|pacman|apt-get|dnf|aa-enforce|resolvectl|printf|command|install|mkdir|chmod|mv|augenrules|dpkg-reconfigure|aideinit|usbguard)\b/g, '<span class="c-cmd">$1</span>')
     .replace(/\$\{?[A-Z_][A-Z0-9_@]*\}?/g, '<span class="c-vr">$&</span>');
 }
 

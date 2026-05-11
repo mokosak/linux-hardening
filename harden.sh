@@ -19,6 +19,9 @@
 #         --skip <a,b,c>      Skip the listed sections
 #         --list              List available sections
 #
+#  Env:
+#     HARDEN_FIREWALL_BACKEND=nftables|firewalld|auto|none
+#
 #  Sections:
 #     packages  sysctl  modules  firewall  dns  apparmor  ssh
 #     login     coredump auditd  fail2ban  updates  usbguard
@@ -43,13 +46,14 @@ ALL_SECTIONS=(packages sysctl modules firewall dns apparmor ssh login coredump a
 # profile → sections enabled
 declare -A PROFILE_SECTIONS=(
   [minimal]="packages sysctl firewall dns apparmor"
-  [balanced]="packages sysctl modules firewall dns apparmor ssh login coredump auditd updates banner"
+  [balanced]="packages sysctl modules firewall dns apparmor ssh login coredump auditd updates usbguard banner"
   [paranoid]="packages sysctl modules firewall dns apparmor ssh login coredump auditd fail2ban updates usbguard banner accounting aide"
 )
 
 BACKUP_ROOT="/var/backups/linux-hardening"
 BACKUP_DIR=""
 LOG_FILE="/var/log/linux-hardening.log"
+FIREWALL_BACKEND="${HARDEN_FIREWALL_BACKEND:-nftables}"
 
 # ---- colors ----------------------------------------------------------------
 if [[ -t 1 ]] && command -v tput >/dev/null 2>&1 && [[ $(tput colors 2>/dev/null || echo 0) -ge 8 ]]; then
@@ -79,7 +83,7 @@ banner() {
   log "${C_BOLD}${C_GRN}  ┌──────────────────────────────────────────────────┐${C_RESET}"
   log "${C_BOLD}${C_GRN}  │${C_RESET}   ${C_BOLD}linux-hardening${C_RESET}   ${C_DIM}·${C_RESET}   opinionated security   ${C_BOLD}${C_GRN}│${C_RESET}"
   log "${C_BOLD}${C_GRN}  └──────────────────────────────────────────────────┘${C_RESET}"
-  log "${C_DIM}  apparmor · firewalld · sysctl · auditd · dns-over-tls${C_RESET}"
+  log "${C_DIM}  apparmor · nftables · sysctl · auditd · dns-over-tls${C_RESET}"
   log ""
 }
 
@@ -164,10 +168,32 @@ pkg_map() {
     arch:apparmor-utils)      echo "apparmor" ;;
     debian:apparmor)          echo "apparmor apparmor-utils apparmor-profiles" ;;
     rhel:apparmor|rhel:apparmor-utils) echo "" ;;   # RHEL uses SELinux, skip silently
+    *:nftables)               echo "nftables" ;;
     arch:fail2ban)            echo "fail2ban" ;;
     debian:fail2ban|rhel:fail2ban) echo "fail2ban" ;;
     *:libpwquality)           [[ $DISTRO_FAMILY == debian ]] && echo "libpam-pwquality" || echo "libpwquality" ;;
     *)                        echo "$name" ;;
+  esac
+}
+
+selected_firewall_backend() {
+  case "$FIREWALL_BACKEND" in
+    nft|nftables) echo "nftables" ;;
+    firewalld)    echo "firewalld" ;;
+    none|off)     echo "none" ;;
+    auto)
+      if command -v nft >/dev/null 2>&1; then
+        echo "nftables"
+      elif command -v firewall-cmd >/dev/null 2>&1; then
+        echo "firewalld"
+      else
+        echo "nftables"
+      fi
+      ;;
+    *)
+      warn "unknown HARDEN_FIREWALL_BACKEND=$FIREWALL_BACKEND; using nftables"
+      echo "nftables"
+      ;;
   esac
 }
 
@@ -202,9 +228,16 @@ section_packages() {
   is_enabled packages || return 0
   step "Package installation"
   run bash -c "$PKG_REFRESH"
-  pkg_install firewalld
+  case "$(selected_firewall_backend)" in
+    nftables)  pkg_install nftables ;;
+    firewalld) pkg_install firewalld ;;
+    none)      debug "firewall package install skipped" ;;
+  esac
   if [[ $DISTRO_FAMILY != rhel ]]; then pkg_install apparmor; fi
-  run systemctl enable --now firewalld 2>/dev/null || warn "firewalld failed to start (container?)"
+  case "$(selected_firewall_backend)" in
+    nftables)  run systemctl enable --now nftables 2>/dev/null || warn "nftables failed to start (container?)" ;;
+    firewalld) run systemctl enable --now firewalld 2>/dev/null || warn "firewalld failed to start (container?)" ;;
+  esac
   [[ $DISTRO_FAMILY != rhel ]] && { run systemctl enable --now apparmor 2>/dev/null || true; }
 }
 
@@ -273,8 +306,8 @@ EOF
 section_modules() {
   is_enabled modules || return 0
   step "Blacklist obsolete / risky kernel modules"
-  write_file /etc/modprobe.d/hardening.conf <<'EOF'
-# Obsolete or rarely-used network protocols
+  write_file /etc/modprobe.d/99-hardening.conf <<'EOF'
+# Obscure / rarely-used network protocols (attack surface)
 install dccp    /bin/false
 install sctp    /bin/false
 install rds     /bin/false
@@ -304,26 +337,78 @@ install hfsplus /bin/false
 install squashfs /bin/false
 install udf     /bin/false
 
-# Legacy interfaces
+# DMA-attack prone interfaces
 install firewire-core /bin/false
+install firewire-ohci /bin/false
+install firewire-sbp2 /bin/false
 install thunderbolt   /bin/false
 EOF
 }
 
 section_firewall() {
   is_enabled firewall || return 0
-  step "Firewall (firewalld, default-deny)"
-  command -v firewall-cmd >/dev/null 2>&1 || { warn "firewall-cmd missing; skipping"; return 0; }
-  run firewall-cmd --set-default-zone=public >/dev/null
-  run firewall-cmd --permanent --zone=public --set-target=DROP >/dev/null || true
-  run firewall-cmd --permanent --zone=public --add-service=ssh
-  run firewall-cmd --permanent --zone=public --add-service=https
-  run firewall-cmd --permanent --zone=public --add-port=853/tcp
-  run firewall-cmd --permanent --zone=public --add-rich-rule='rule protocol value="dccp" drop' 2>/dev/null || true
-  run firewall-cmd --permanent --zone=public --add-rich-rule='rule protocol value="sctp" drop' 2>/dev/null || true
-  # SSH rate-limit: 3 new connections / 60s per source
-  run firewall-cmd --permanent --zone=public --add-rich-rule='rule service name="ssh" limit value="3/m" accept' 2>/dev/null || true
-  run firewall-cmd --reload >/dev/null
+  case "$(selected_firewall_backend)" in
+    nftables)
+      step "Firewall (nftables, default-deny inbound)"
+      command -v nft >/dev/null 2>&1 || { warn "nft missing; skipping"; return 0; }
+      write_file /etc/nftables.conf <<'EOF'
+#!/usr/sbin/nft -f
+# Managed by linux-hardening/harden.sh
+
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+
+    ct state invalid drop
+    ct state established,related accept
+    iifname "lo" accept
+
+    # Keep DHCP and ICMP/ICMPv6 working; otherwise IPv6 and some networks break.
+    udp sport 67 udp dport 68 accept
+    udp sport 547 udp dport 546 accept
+    meta l4proto icmp accept
+    meta l4proto ipv6-icmp accept
+
+    # Public services this script intentionally leaves reachable.
+    tcp dport 22 ct state new limit rate 3/minute accept
+    tcp dport 443 accept
+    tcp dport 853 accept
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+
+    # Cut off rarely-needed protocols at the firewall too.
+    meta l4proto { dccp, sctp } drop
+  }
+}
+EOF
+      run nft -f /etc/nftables.conf
+      run systemctl enable --now nftables 2>/dev/null || true
+      ;;
+    firewalld)
+      step "Firewall (firewalld, default-deny inbound)"
+      command -v firewall-cmd >/dev/null 2>&1 || { warn "firewall-cmd missing; skipping"; return 0; }
+      run firewall-cmd --set-default-zone=public >/dev/null
+      run firewall-cmd --permanent --zone=public --set-target=DROP >/dev/null || true
+      run firewall-cmd --permanent --zone=public --add-service=ssh
+      run firewall-cmd --permanent --zone=public --add-service=https
+      run firewall-cmd --permanent --zone=public --add-port=853/tcp
+      run firewall-cmd --permanent --zone=public --add-rich-rule='rule protocol value="dccp" drop' 2>/dev/null || true
+      run firewall-cmd --permanent --zone=public --add-rich-rule='rule protocol value="sctp" drop' 2>/dev/null || true
+      run firewall-cmd --permanent --zone=public --add-rich-rule='rule service name="ssh" limit value="3/m" accept' 2>/dev/null || true
+      run firewall-cmd --reload >/dev/null
+      ;;
+    none)
+      warn "firewall backend disabled; skipping firewall rules"
+      ;;
+  esac
 }
 
 section_dns() {
@@ -453,7 +538,9 @@ section_auditd() {
   step "Auditd syscall auditing"
   pkg_install audit 2>/dev/null || pkg_install auditd 2>/dev/null || warn "audit package not found"
   if [[ -d /etc/audit/rules.d ]]; then
-    write_file /etc/audit/rules.d/hardening.rules <<'EOF'
+    local tmp
+    tmp=$(mktemp)
+    cat > "$tmp" <<'EOF'
 ## linux-hardening/harden.sh audit baseline
 -D
 -b 8192
@@ -470,19 +557,44 @@ section_auditd() {
 -w /var/log/lastlog  -p wa -k logins
 -w /var/run/utmp     -p wa -k logins
 
-# Time & network
--w /etc/localtime       -p wa -k time
--w /etc/hosts           -p wa -k network
--w /etc/resolv.conf     -p wa -k network
--w /etc/ssh/sshd_config -p wa -k sshd
--w /etc/ssh/sshd_config.d/ -p wa -k sshd
-
 # Kernel module loading
 -w /sbin/insmod   -p x -k modules
 -w /sbin/rmmod    -p x -k modules
 -w /sbin/modprobe -p x -k modules
 -a always,exit -F arch=b64 -S init_module,delete_module,finit_module -k modules
+
+# Privilege escalation
+-w /usr/bin/sudo  -p x -k privileged
+-w /usr/bin/su    -p x -k privileged
+-w /usr/bin/pkexec -p x -k privileged
 EOF
+    add_audit_watch() {
+      local path="$1" perms="$2" key="$3"
+      [[ -e "$path" ]] && printf -- '-w %s -p %s -k %s\n' "$path" "$perms" "$key" >> "$tmp"
+    }
+
+    add_audit_watch /etc/localtime wa time
+    add_audit_watch /etc/hosts wa network
+    add_audit_watch /etc/resolv.conf wa network
+    add_audit_watch /etc/ssh/sshd_config wa sshd
+    add_audit_watch /etc/ssh/sshd_config.d/ wa sshd
+    add_audit_watch /boot/ wa boot
+    add_audit_watch /etc/kernel/cmdline wa boot
+    add_audit_watch /etc/mkinitcpio.conf wa boot
+    add_audit_watch /etc/mkinitcpio.d/ wa boot
+    add_audit_watch /usr/share/secureboot/ wa secureboot
+    add_audit_watch /var/lib/sbctl/ wa secureboot
+    add_audit_watch /etc/crypttab wa luks
+    add_audit_watch /etc/nftables.conf wa firewall
+    add_audit_watch /etc/firewalld/ wa firewall
+    add_audit_watch /etc/usbguard/ wa usbguard
+    add_audit_watch /etc/apparmor.d/ wa apparmor
+    add_audit_watch /etc/modprobe.d/ wa modules
+    add_audit_watch /etc/systemd/ wa systemd
+    add_audit_watch /usr/lib/systemd/system/ wa systemd
+
+    write_file /etc/audit/rules.d/99-hardening.rules < "$tmp"
+    rm -f "$tmp"
     run augenrules --load 2>/dev/null || true
   fi
   run systemctl enable --now auditd 2>/dev/null || true
@@ -581,21 +693,23 @@ audit_report() {
     if eval "$cond" >/dev/null 2>&1; then mark="${C_GRN}✓${C_RESET}"; fi
     printf '  %b  %s\n' "$mark" "$label"
   }
-  _chk "firewalld running"                  "systemctl is-active --quiet firewalld"
+  _chk "firewall backend configured"        "systemctl is-active --quiet firewalld || systemctl is-active --quiet nftables || systemctl is-enabled --quiet nftables"
   _chk "apparmor enabled"                   "systemctl is-active --quiet apparmor || aa-status --enabled"
   _chk "systemd-resolved running"           "systemctl is-active --quiet systemd-resolved"
   _chk "DNSOverTLS enabled"                 "resolvectl status 2>/dev/null | grep -qi 'DNSOverTLS: yes\\|DNSOverTLS=yes'"
   _chk "auditd running"                     "systemctl is-active --quiet auditd"
   _chk "fail2ban running"                   "systemctl is-active --quiet fail2ban"
-  _chk "sysctl hardening file present"      "[ -f /etc/sysctl.d/99-hardening.conf ]"
+  _chk "usbguard running"                   "systemctl is-active --quiet usbguard"
+  _chk "sysctl hardening file present"      "[ -f /etc/sysctl.d/99-hardening.conf ] || grep -Rqs 'kernel.kptr_restrict' /etc/sysctl.d /usr/lib/sysctl.d"
   _chk "kptr_restrict == 2"                 "[ \"$(sysctl -n kernel.kptr_restrict 2>/dev/null)\" = 2 ]"
   _chk "ptrace_scope >= 1"                  "[ \"$(sysctl -n kernel.yama.ptrace_scope 2>/dev/null)\" -ge 1 ]"
   _chk "SYN cookies on"                     "[ \"$(sysctl -n net.ipv4.tcp_syncookies 2>/dev/null)\" = 1 ]"
   _chk "IP forwarding off"                  "[ \"$(sysctl -n net.ipv4.ip_forward 2>/dev/null)\" = 0 ]"
-  _chk "dccp/sctp blacklisted"              "grep -q 'install dccp' /etc/modprobe.d/*.conf 2>/dev/null"
+  _chk "dccp/sctp blacklisted"              "grep -q 'install dccp' /etc/modprobe.d/*.conf /usr/lib/modprobe.d/*.conf 2>/dev/null && grep -q 'install sctp' /etc/modprobe.d/*.conf /usr/lib/modprobe.d/*.conf 2>/dev/null"
   _chk "root login over ssh disabled"       "grep -qiE '^PermitRootLogin\\s+no' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null"
   _chk "password auth over ssh disabled"    "grep -qiE '^PasswordAuthentication\\s+no' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null"
   _chk "core dumps disabled"                "[ \"$(sysctl -n fs.suid_dumpable 2>/dev/null)\" = 0 ]"
+  _chk "audit tamper rules present"          "grep -Rqs 'boot\\|secureboot\\|usbguard\\|apparmor\\|privileged' /etc/audit/rules.d"
   _chk "legal banner present"               "[ -s /etc/issue.net ]"
 }
 

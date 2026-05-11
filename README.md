@@ -4,9 +4,10 @@ A hardening script for Linux that actually gets used, because nobody wants to
 read a 400-line STIG checklist at 2am.
 
 Point it at an Arch, Debian/Ubuntu, or Fedora box. It makes the kernel pickier,
-the network quieter, SSH stricter, DNS encrypted, and AppArmor actually enforce.
-You can dry-run everything first, every change gets backed up, and if you hate
-the result you can roll the whole thing back with one command.
+the network quieter, SSH stricter, DNS encrypted, AppArmor actually enforce, and
+USB devices less blindly trusted. You can dry-run everything first, every change
+gets backed up, and if you hate the result you can roll the whole thing back
+with one command.
 
 There's also a browser-based builder — `hardening-gui.html` — that lets you
 tick what you want and spits out a custom script.
@@ -40,8 +41,9 @@ and most servers.
 Nothing that's going to break your workflow.
 
 **`balanced`** *(default)* — minimal, plus SSH hardening, password policy,
-auditd, module blacklist, a legal banner, and automatic security updates.
-This is the one you probably want.
+auditd, module blacklist, USBGuard, a legal banner, and automatic security
+updates. This is the one you probably want, as long as you review the generated
+USBGuard policy before you start swapping hardware around.
 
 **`paranoid`** — everything above, plus fail2ban, USBGuard, AIDE file
 integrity, and process accounting. Great for servers. Annoying on a laptop
@@ -59,6 +61,15 @@ sudo ./harden.sh --skip usbguard,aide
 ./harden.sh --list          # show every section name
 ```
 
+Firewall backend is intentionally boring:
+
+```sh
+sudo ./harden.sh                         # nftables
+sudo HARDEN_FIREWALL_BACKEND=firewalld ./harden.sh
+sudo HARDEN_FIREWALL_BACKEND=auto ./harden.sh
+sudo HARDEN_FIREWALL_BACKEND=none ./harden.sh --skip firewall
+```
+
 ---
 
 ## What actually gets touched
@@ -68,15 +79,15 @@ sudo ./harden.sh --skip usbguard,aide
 | **kernel** | kptr_restrict, dmesg_restrict, ASLR, ptrace_scope, SysRq off, BPF locked down, kexec disabled, and a few dozen more knobs in `/etc/sysctl.d/99-hardening.conf` |
 | **network** | SYN cookies, rp_filter, no ICMP redirects, no source routing, IPv6 hardened instead of disabled, forwarding off, martians logged |
 | **modules** | obsolete protocols (dccp, sctp, rds, tipc, decnet…), obscure filesystems (cramfs, hfs, udf…), and firewire/thunderbolt all blacklisted |
-| **firewall** | firewalld with default-deny, SSH rate-limited to 3/min, DCCP/SCTP dropped, only SSH/HTTPS/DoT allowed out of the box |
+| **firewall** | nftables by default, firewalld if you ask for it; default-deny inbound, SSH rate-limited to 3/min, DCCP/SCTP dropped |
 | **dns** | systemd-resolved with DNS-over-TLS (Cloudflare + Quad9 fallback) and DNSSEC |
 | **apparmor** | enforce profiles for avahi, dnsmasq, cups-browsed, firefox, thunderbird when present |
 | **ssh** | key-only, no root, modern crypto suites, short timeouts, pre-auth banner, dropped into `sshd_config.d/` so it doesn't fight with distro defaults |
 | **login** | `login.defs`, `pwquality` (12+ chars, 3 classes, dict check), `faillock` lockout, yescrypt hashing |
 | **dumps** | core dumps off everywhere: ulimit, setuid, systemd-coredump |
-| **auditd** | baseline rules for identity files, sudoers, sshd config, module loading |
+| **auditd** | baseline rules for identity files, sudoers, sshd config, module loading, boot chain, firewall, USBGuard, AppArmor, systemd unit changes, and privileged binaries |
 | **updates** | unattended-upgrades / dnf-automatic / paccache on the right distro |
-| **extras** | legal banner, fail2ban, USBGuard, AIDE, process accounting (paranoid only) |
+| **extras** | legal banner, fail2ban, AIDE, process accounting, and USBGuard policy generation |
 
 Every section is a function in the script. Open it up, read it, disable what
 you don't want. No magic.
@@ -148,7 +159,7 @@ Hit **Download**, scp it to the box, run it as root.
 
 ## Under the hood
 
-The script is one bash file. It's ~700 lines but most of that is the sysctl,
+The script is one bash file. It's still small enough to read, but most of it is the sysctl,
 SSH, and auditd config blobs being emitted verbatim. The actual logic is small:
 
 - distro detection (`pacman` / `apt-get` / `dnf`)
