@@ -17,7 +17,7 @@ tick what you want and spits out a custom script.
 ## Try it in 30 seconds
 
 ```sh
-git clone https://github.com/mokosak/linux-hardening
+git clone https://github.com/REDACTED/linux-hardening
 cd linux-hardening
 
 # see what it *would* do, no changes:
