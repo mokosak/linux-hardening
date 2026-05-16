@@ -18,6 +18,7 @@
 #         --only <a,b,c>      Run only the listed sections
 #         --skip <a,b,c>      Skip the listed sections
 #         --list              List available sections
+#         --tui               Force the terminal UI
 #
 #  Env:
 #     HARDEN_FIREWALL_BACKEND=nftables|firewalld|auto|none
@@ -40,15 +41,38 @@ REVERT_DIR=""
 PROFILE="balanced"
 ONLY_SECTIONS=""
 SKIP_SECTIONS=""
+ARG_COUNT=0
+TUI_MODE=0
+TUI_RAN=0
 
 ALL_SECTIONS=(packages sysctl modules firewall dns apparmor ssh login coredump auditd fail2ban updates usbguard banner accounting aide)
 
-# profile → sections enabled
+# profile to sections enabled
 declare -A PROFILE_SECTIONS=(
   [minimal]="packages sysctl firewall dns apparmor"
   [balanced]="packages sysctl modules firewall dns apparmor ssh login coredump auditd updates usbguard banner"
   [paranoid]="packages sysctl modules firewall dns apparmor ssh login coredump auditd fail2ban updates usbguard banner accounting aide"
 )
+
+declare -A SECTION_DESC=(
+  [packages]="install required packages and services"
+  [sysctl]="kernel and network hardening knobs"
+  [modules]="block obsolete protocols, filesystems, DMA-prone modules"
+  [firewall]="default-deny inbound firewall rules"
+  [dns]="systemd-resolved with DNS-over-TLS"
+  [apparmor]="enable AppArmor profiles when present"
+  [ssh]="key-only SSH and stricter daemon settings"
+  [login]="password policy, faillock, login defaults"
+  [coredump]="disable core dumps"
+  [auditd]="baseline audit rules"
+  [fail2ban]="basic sshd jail"
+  [updates]="distro-native security update timer"
+  [usbguard]="generate and enable USBGuard policy"
+  [banner]="legal login banner"
+  [accounting]="process accounting"
+  [aide]="file integrity database"
+)
+declare -A TUI_SECTION_ENABLED=()
 
 BACKUP_ROOT="/var/backups/linux-hardening"
 BACKUP_DIR=""
@@ -70,20 +94,20 @@ log() {
   [[ -n "$LOG_FILE" && -w "$LOG_FILE" ]] || return 0
   ( printf '[%(%F %T)T] %s\n' -1 "$*" >> "$LOG_FILE" ) 2>/dev/null || true
 }
-info()   { log "${C_CYAN}»${C_RESET} $*"; }
-ok()     { log "${C_GRN}✓${C_RESET} $*"; }
+info()   { log "${C_CYAN}::${C_RESET} $*"; }
+ok()     { log "${C_GRN}[ok]${C_RESET} $*"; }
 warn()   { log "${C_YEL}!${C_RESET} $*"; }
-err()    { printf '%s\n' "${C_RED}✗${C_RESET} $*" >&2; }
-step()   { log ""; log "${C_BOLD}${C_MAG}── $* ──────────────────────────────────────────${C_RESET}"; }
-debug()  { [[ $VERBOSE -eq 1 ]] && log "${C_DIM}· $*${C_RESET}" || true; }
+err()    { printf '%s\n' "${C_RED}xx${C_RESET} $*" >&2; }
+step()   { log ""; log "${C_BOLD}${C_MAG}== $* ==${C_RESET}"; }
+debug()  { [[ $VERBOSE -eq 1 ]] && log "${C_DIM}- $*${C_RESET}" || true; }
 
 banner() {
   [[ $QUIET -eq 1 ]] && return 0
   log ""
-  log "${C_BOLD}${C_GRN}  ┌──────────────────────────────────────────────────┐${C_RESET}"
-  log "${C_BOLD}${C_GRN}  │${C_RESET}   ${C_BOLD}linux-hardening${C_RESET}   ${C_DIM}·${C_RESET}   opinionated security   ${C_BOLD}${C_GRN}│${C_RESET}"
-  log "${C_BOLD}${C_GRN}  └──────────────────────────────────────────────────┘${C_RESET}"
-  log "${C_DIM}  apparmor · nftables · sysctl · auditd · dns-over-tls${C_RESET}"
+  log "${C_BOLD}${C_GRN}  +--------------------------------------------------+${C_RESET}"
+  log "${C_BOLD}${C_GRN}  |${C_RESET}   ${C_BOLD}linux-hardening${C_RESET}       opinionated security   ${C_BOLD}${C_GRN}|${C_RESET}"
+  log "${C_BOLD}${C_GRN}  +--------------------------------------------------+${C_RESET}"
+  log "${C_DIM}  apparmor / nftables / sysctl / auditd / dns-over-tls${C_RESET}"
   log ""
 }
 
@@ -100,7 +124,7 @@ run() {
 require_root() {
   if [[ $EUID -ne 0 ]]; then
     if command -v sudo >/dev/null 2>&1; then
-      info "Escalating with sudo…"
+      info "Escalating with sudo..."
       sudo -v || { err "sudo authentication failed"; exit 1; }
       exec sudo -E "$0" "$@"
     fi
@@ -123,7 +147,7 @@ backup_file() {
   local dest="$BACKUP_DIR/$rel"
   run mkdir -p "$(dirname "$dest")"
   run cp -a --preserve=all "$f" "$dest" 2>/dev/null || true
-  debug "backed up $f → $dest"
+  debug "backed up $f -> $dest"
 }
 
 write_file() {
@@ -137,12 +161,224 @@ write_file() {
   fi
   backup_file "$dest"
   if [[ $DRY_RUN -eq 1 ]]; then
-    log "${C_DIM}[dry-run]${C_RESET} write → $dest"
+    log "${C_DIM}[dry-run]${C_RESET} write -> $dest"
     rm -f "$tmp"; return 0
   fi
   install -D -m 0644 "$tmp" "$dest"
   rm -f "$tmp"
   ok "wrote $dest"
+}
+
+# ---- terminal UI -----------------------------------------------------------
+term_cols() { tput cols 2>/dev/null || printf '80'; }
+
+repeat_char() {
+  local char=$1 count=$2 out=
+  while (( count-- > 0 )); do out+=$char; done
+  printf '%s' "$out"
+}
+
+visible_len() {
+  local text=$1 i=0 len=0 ch
+  while (( i < ${#text} )); do
+    ch=${text:i:1}
+    if [[ $ch == $'\033' ]]; then
+      i=$((i + 1))
+      while (( i < ${#text} )); do
+        ch=${text:i:1}
+        i=$((i + 1))
+        [[ $ch == [A-Za-z] ]] && break
+      done
+    else
+      len=$((len + 1))
+      i=$((i + 1))
+    fi
+  done
+  printf '%d' "$len"
+}
+
+pad_right() {
+  local text=$1 width=$2 len
+  len=$(visible_len "$text")
+  printf '%s' "$text"
+  (( len < width )) && printf '%*s' "$((width - len))" ''
+}
+
+box_top() {
+  local width=$1 title=${2:-} inner=$((width - 2))
+  printf '  %b+' "$C_BLU"
+  repeat_char "-" "$inner"
+  printf '+%b\n' "$C_RESET"
+  if [[ -n $title ]]; then
+    printf '  %b|%b ' "$C_BLU" "$C_RESET"
+    pad_right "${C_BOLD}${title}${C_RESET}" "$((inner - 1))"
+    printf '%b|%b\n' "$C_BLU" "$C_RESET"
+    printf '  %b+' "$C_BLU"
+    repeat_char "-" "$inner"
+    printf '+%b\n' "$C_RESET"
+  fi
+}
+
+box_line() {
+  local width=$1 text=${2:-} inner=$((width - 2))
+  printf '  %b|%b ' "$C_BLU" "$C_RESET"
+  pad_right "$text" "$((inner - 1))"
+  printf '%b|%b\n' "$C_BLU" "$C_RESET"
+}
+
+box_bottom() {
+  local width=$1 inner=$((width - 2))
+  printf '  %b+' "$C_BLU"
+  repeat_char "-" "$inner"
+  printf '+%b\n' "$C_RESET"
+}
+
+tui_frame() {
+  printf '\033[H'
+}
+
+tui_frame_end() {
+  printf '\033[J'
+}
+
+read_key() {
+  local key seq rest
+  IFS= read -rsn1 key || return 1
+  case "$key" in
+    "") printf enter; return ;;
+    " ") printf space; return ;;
+    $'\033')
+      seq=$key
+      while IFS= read -rsn1 -t 0.01 rest; do
+        seq+=$rest
+        [[ $rest == [A-Za-z~] ]] && break
+        ((${#seq} >= 12)) && break
+      done
+      case "$seq" in
+        $'\033[A'|$'\033OA'|$'\033['*A) printf up ;;
+        $'\033[B'|$'\033OB'|$'\033['*B) printf down ;;
+        $'\033[C'|$'\033OC'|$'\033['*C) printf right ;;
+        $'\033[D'|$'\033OD'|$'\033['*D) printf left ;;
+        *) printf escape ;;
+      esac
+      ;;
+    *) printf '%s' "$key" ;;
+  esac
+}
+
+tui_set_profile_sections() {
+  local s
+  for s in "${ALL_SECTIONS[@]}"; do TUI_SECTION_ENABLED[$s]=0; done
+  for s in ${PROFILE_SECTIONS[$PROFILE]}; do TUI_SECTION_ENABLED[$s]=1; done
+}
+
+tui_selected_count() {
+  local count=0 s
+  for s in "${ALL_SECTIONS[@]}"; do
+    (( TUI_SECTION_ENABLED[$s] )) && count=$((count + 1))
+  done
+  printf '%d' "$count"
+}
+
+tui_apply_selection() {
+  local out= sep= s
+  for s in "${ALL_SECTIONS[@]}"; do
+    if (( TUI_SECTION_ENABLED[$s] )); then
+      out+="${sep}${s}"
+      sep=,
+    fi
+  done
+  ONLY_SECTIONS=$out
+}
+
+tui_next_profile() {
+  case "$PROFILE" in
+    minimal) PROFILE=balanced ;;
+    balanced) PROFILE=paranoid ;;
+    *) PROFILE=minimal ;;
+  esac
+  tui_set_profile_sections
+}
+
+tui_next_action() {
+  case "${TUI_ACTION:-preview}" in
+    preview) TUI_ACTION=apply ;;
+    apply) TUI_ACTION=audit ;;
+    *) TUI_ACTION=preview ;;
+  esac
+}
+
+tui_action_label() {
+  case "${TUI_ACTION:-preview}" in
+    preview) printf '%bpreview only%b' "$C_YEL" "$C_RESET" ;;
+    apply) printf '%bapply changes%b' "$C_RED" "$C_RESET" ;;
+    audit) printf '%baudit only%b' "$C_GRN" "$C_RESET" ;;
+  esac
+}
+
+tui_render() {
+  local selected=$1 width cols s cursor mark line
+  cols=$(term_cols)
+  (( cols < 96 )) && width=$((cols - 4)) || width=96
+  (( width < 72 )) && width=72
+
+  tui_frame
+  box_top "$width"
+  box_line "$width" "${C_BOLD}linux-hardening${C_RESET}  ${C_DIM}kernel, firewall, ssh, audit, dns${C_RESET}"
+  box_line "$width" "${C_DIM}action:${C_RESET} $(tui_action_label)  ${C_DIM}profile:${C_RESET} ${PROFILE}  ${C_DIM}selected:${C_RESET} $(tui_selected_count)/${#ALL_SECTIONS[@]}"
+  box_bottom "$width"
+  printf '\n'
+  box_top "$width" "sections"
+  local i=0
+  for s in "${ALL_SECTIONS[@]}"; do
+    cursor=" "
+    mark="${C_DIM}[ ]${C_RESET}"
+    (( selected == i )) && cursor="${C_CYAN}>${C_RESET}"
+    (( TUI_SECTION_ENABLED[$s] )) && mark="${C_GRN}[x]${C_RESET}"
+    line="$cursor $mark ${C_BOLD}${s}${C_RESET}  ${C_DIM}${SECTION_DESC[$s]}${C_RESET}"
+    box_line "$width" "$line"
+    i=$((i + 1))
+  done
+  box_line "$width" ""
+  box_line "$width" "${C_DIM}keys: arrows/jk move space toggle p profile m action enter run q${C_RESET}"
+  box_bottom "$width"
+  tui_frame_end
+}
+
+run_tui() {
+  local selected=0 key s
+  TUI_RAN=1
+  TUI_ACTION=preview
+  tui_set_profile_sections
+  printf '\033[?1049h\033[?25l\033[2J'
+  trap 'printf "\033[?25h\033[?1049l%b" "$C_RESET"' EXIT
+  while :; do
+    tui_render "$selected"
+    key=$(read_key)
+    case "$key" in
+      up|k) selected=$((selected == 0 ? ${#ALL_SECTIONS[@]} - 1 : selected - 1)) ;;
+      down|j) selected=$((selected == ${#ALL_SECTIONS[@]} - 1 ? 0 : selected + 1)) ;;
+      space)
+        s=${ALL_SECTIONS[$selected]}
+        if (( TUI_SECTION_ENABLED[$s] )); then TUI_SECTION_ENABLED[$s]=0; else TUI_SECTION_ENABLED[$s]=1; fi
+        ;;
+      p|P) tui_next_profile ;;
+      m|M|right) tui_next_action ;;
+      a|A) for s in "${ALL_SECTIONS[@]}"; do TUI_SECTION_ENABLED[$s]=1; done ;;
+      n|N) for s in "${ALL_SECTIONS[@]}"; do TUI_SECTION_ENABLED[$s]=0; done ;;
+      enter) break ;;
+      q|Q|escape) printf '\033[?25h\033[?1049l%b' "$C_RESET"; trap - EXIT; exit 1 ;;
+    esac
+  done
+  printf '\033[?25h\033[?1049l%b' "$C_RESET"
+  trap - EXIT
+
+  tui_apply_selection
+  case "$TUI_ACTION" in
+    preview) DRY_RUN=1; CHECK_ONLY=0 ;;
+    apply) DRY_RUN=0; CHECK_ONLY=0 ;;
+    audit) CHECK_ONLY=1; DRY_RUN=1 ;;
+  esac
 }
 
 # ---- distro detection ------------------------------------------------------
@@ -245,30 +481,30 @@ section_sysctl() {
   is_enabled sysctl || return 0
   step "Kernel & network sysctl"
   write_file /etc/sysctl.d/99-hardening.conf <<'EOF'
-# Managed by linux-hardening/harden.sh — edit with care.
+# Managed by linux-hardening/harden.sh - edit with care.
 
-# ── Kernel self-protection ──────────────────────────────────────────────
+# Kernel self-protection
 kernel.kptr_restrict=2
 kernel.dmesg_restrict=1
 kernel.printk=3 3 3 3
-kernel.kexec_load_disabled=1
-kernel.unprivileged_bpf_disabled=1
+-kernel.kexec_load_disabled=1
+-kernel.unprivileged_bpf_disabled=1
 kernel.yama.ptrace_scope=2
 kernel.sysrq=0
-kernel.perf_event_paranoid=3
+-kernel.perf_event_paranoid=3
 kernel.randomize_va_space=2
-kernel.unprivileged_userns_clone=0
+-kernel.unprivileged_userns_clone=0
 kernel.core_uses_pid=1
-dev.tty.ldisc_autoload=0
+-dev.tty.ldisc_autoload=0
 
-# ── Filesystem safety ───────────────────────────────────────────────────
+# Filesystem safety
 fs.protected_hardlinks=1
 fs.protected_symlinks=1
 fs.protected_fifos=2
 fs.protected_regular=2
 fs.suid_dumpable=0
 
-# ── IPv4 network stack ──────────────────────────────────────────────────
+# IPv4 network stack
 net.ipv4.tcp_syncookies=1
 net.ipv4.tcp_rfc1337=1
 net.ipv4.conf.all.rp_filter=1
@@ -289,9 +525,8 @@ net.ipv4.ip_forward=0
 net.ipv4.tcp_timestamps=0
 net.ipv4.tcp_sack=0
 net.ipv4.tcp_dsack=0
-net.ipv4.tcp_fack=0
 
-# ── IPv6 network stack ──────────────────────────────────────────────────
+# IPv6 network stack
 net.ipv6.conf.all.accept_redirects=0
 net.ipv6.conf.default.accept_redirects=0
 net.ipv6.conf.all.accept_source_route=0
@@ -646,7 +881,7 @@ section_usbguard() {
     run chmod 0600 /etc/usbguard/rules.conf 2>/dev/null || true
   fi
   run systemctl enable --now usbguard 2>/dev/null || true
-  warn "USBGuard enabled — review /etc/usbguard/rules.conf before rebooting."
+  warn "USBGuard enabled - review /etc/usbguard/rules.conf before rebooting."
 }
 
 section_banner() {
@@ -667,7 +902,7 @@ section_accounting() {
 
 section_aide() {
   is_enabled aide || return 0
-  step "AIDE file integrity (initial DB — slow)"
+  step "AIDE file integrity (initial DB - slow)"
   pkg_install aide || return 0
   if [[ ! -f /var/lib/aide/aide.db.gz ]] && [[ ! -f /var/lib/aide/aide.db ]]; then
     if confirm "Initialize AIDE database now (can take several minutes)?"; then
@@ -689,8 +924,8 @@ audit_report() {
   local rows=()
   _chk() {
     local label="$1" cond="$2"
-    local mark="${C_RED}✗${C_RESET}"
-    if eval "$cond" >/dev/null 2>&1; then mark="${C_GRN}✓${C_RESET}"; fi
+    local mark="${C_RED}[fail]${C_RESET}"
+    if eval "$cond" >/dev/null 2>&1; then mark="${C_GRN}[ok]${C_RESET}"; fi
     printf '  %b  %s\n' "$mark" "$label"
   }
   _chk "firewall backend configured"        "systemctl is-active --quiet firewalld || systemctl is-active --quiet nftables || systemctl is-enabled --quiet nftables"
@@ -750,6 +985,7 @@ parse_args() {
       --profile)    shift; PROFILE="${1:-balanced}" ;;
       --only)       shift; ONLY_SECTIONS="${1:-}" ;;
       --skip)       shift; SKIP_SECTIONS="${1:-}" ;;
+      --tui)        TUI_MODE=1 ;;
       --list)       printf '%s\n' "${ALL_SECTIONS[@]}"; exit 0 ;;
       *) err "unknown option: $1"; usage; exit 2 ;;
     esac
@@ -763,14 +999,29 @@ parse_args() {
 # ============================================================================
 
 main() {
+  ARG_COUNT=$#
   parse_args "$@"
+
+  if [[ $TUI_MODE -eq 1 || ( $ARG_COUNT -eq 0 && -t 0 && -t 1 && $QUIET -eq 0 ) ]]; then
+    run_tui
+  fi
 
   if [[ $CHECK_ONLY -eq 1 ]]; then
     audit_report
     exit 0
   fi
 
-  [[ $DRY_RUN -eq 0 ]] && require_root "$@"
+  if [[ $DRY_RUN -eq 0 ]]; then
+    if [[ $TUI_RAN -eq 1 ]]; then
+      root_args=(--profile "$PROFILE" --only "$ONLY_SECTIONS")
+      [[ $ASSUME_YES -eq 1 ]] && root_args+=(--yes)
+      [[ $VERBOSE -eq 1 ]] && root_args+=(--verbose)
+      [[ $QUIET -eq 1 ]] && root_args+=(--quiet)
+      require_root "${root_args[@]}"
+    else
+      require_root "$@"
+    fi
+  fi
   ( mkdir -p "$(dirname "$LOG_FILE")" ) 2>/dev/null || true
   ( : > "$LOG_FILE" ) 2>/dev/null || LOG_FILE=""
 

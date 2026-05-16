@@ -20,18 +20,23 @@ tick what you want and spits out a custom script.
 git clone https://github.com/REDACTED/linux-hardening
 cd linux-hardening
 
-# see what it *would* do, no changes:
+# open the terminal UI:
+./harden.sh
+
+# or see what the balanced profile would do with no UI:
 ./harden.sh --dry-run
 
 # audit the current state of your system:
 ./harden.sh --check
 
-# when you're ready:
-sudo ./harden.sh
+# when you're ready from CLI:
+sudo ./harden.sh --profile balanced
 ```
 
-That's it. Default profile is `balanced`, which is sane for laptops, desktops,
-and most servers.
+That's it. The TUI starts in preview mode, so holding arrow keys, toggling
+sections, and changing profiles stays inside the terminal instead of dumping
+half-rendered menus. Default profile is `balanced`, which is sane for laptops,
+desktops, and most servers.
 
 ---
 
@@ -59,6 +64,7 @@ You can also cherry-pick:
 sudo ./harden.sh --only firewall,dns,ssh
 sudo ./harden.sh --skip usbguard,aide
 ./harden.sh --list          # show every section name
+./harden.sh --tui           # force the terminal UI
 ```
 
 Firewall backend is intentionally boring:
